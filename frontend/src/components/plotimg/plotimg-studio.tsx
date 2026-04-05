@@ -142,6 +142,9 @@ const TOOLTIPS = {
   pending: "You changed a setting after the last render.",
 };
 
+const STALE_UPLOAD_ERROR = "Upload not found for this session.";
+const INVALID_SESSION_ERROR = "Missing or invalid x-plotimg-session header.";
+
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
@@ -997,6 +1000,48 @@ export function PlotimgStudio() {
     }
   });
 
+  const startFreshSession = useEffectEvent((reason?: string) => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const nextSessionId = window.crypto.randomUUID();
+    window.sessionStorage.setItem(SESSION_ID_STORAGE_KEY, nextSessionId);
+    window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+    window.localStorage.removeItem(SESSION_ID_STORAGE_KEY);
+    activePreviewRequest.current += 1;
+    restoredPreviewKeyRef.current = null;
+    processedPurchaseReturnRef.current = null;
+
+    clearUnlockProgress();
+    updateOriginalImageSource(null);
+    setSessionId(nextSessionId);
+    setUpload(null);
+    setPreview(null);
+    setRenderedParams(null);
+    setPendingChanges(false);
+    setGenerationState({
+      status: "error",
+      message: "Session refreshed",
+      error:
+        reason ??
+        "This tab had an expired upload. A fresh session is ready now. Upload the image again to continue.",
+    });
+  });
+
+  const recoverIfSessionExpired = useEffectEvent((error: unknown) => {
+    const message = error instanceof Error ? error.message : "";
+
+    if (!message.includes(STALE_UPLOAD_ERROR) && !message.includes(INVALID_SESSION_ERROR)) {
+      return false;
+    }
+
+    startFreshSession(
+      "That upload no longer exists for this tab. We started a fresh session for you. Upload again to continue.",
+    );
+    return true;
+  });
+
   const clearUnlockProgress = useEffectEvent(() => {
     activeEmbeddedCheckout.current?.close();
     activeEmbeddedCheckout.current = null;
@@ -1154,11 +1199,12 @@ export function PlotimgStudio() {
   }, []);
 
   useEffect(() => {
-    const existingSessionId = window.localStorage.getItem(SESSION_ID_STORAGE_KEY);
+    const existingSessionId = window.sessionStorage.getItem(SESSION_ID_STORAGE_KEY);
     const nextSessionId = existingSessionId || window.crypto.randomUUID();
     if (!existingSessionId) {
-      window.localStorage.setItem(SESSION_ID_STORAGE_KEY, nextSessionId);
+      window.sessionStorage.setItem(SESSION_ID_STORAGE_KEY, nextSessionId);
     }
+    window.localStorage.removeItem(SESSION_ID_STORAGE_KEY);
 
     const savedSnapshot = window.sessionStorage.getItem(SESSION_STORAGE_KEY);
     if (savedSnapshot) {
@@ -1217,13 +1263,16 @@ export function PlotimgStudio() {
     restoredPreviewKeyRef.current = restoreKey;
 
     void beginPreviewGeneration(upload.uploadId, renderedParams).catch((error) => {
+      if (recoverIfSessionExpired(error)) {
+        return;
+      }
       setGenerationState({
         status: "error",
         message: "Preview failed",
         error: error instanceof Error ? error.message : "Preview generation failed.",
       });
     });
-  }, [beginPreviewGeneration, preview, renderedParams, sessionId, upload]);
+  }, [beginPreviewGeneration, preview, recoverIfSessionExpired, renderedParams, sessionId, upload]);
 
   useEffect(() => {
     if (!sessionId || typeof window === "undefined") {
@@ -1370,6 +1419,9 @@ export function PlotimgStudio() {
     try {
       nextUpload = await uploadImage(file, sessionId);
     } catch (error) {
+      if (recoverIfSessionExpired(error)) {
+        return;
+      }
       setGenerationState({
         status: "error",
         message: "Upload failed",
@@ -1382,6 +1434,9 @@ export function PlotimgStudio() {
     try {
       await beginPreviewGeneration(nextUpload.uploadId, params);
     } catch (error) {
+      if (recoverIfSessionExpired(error)) {
+        return;
+      }
       setGenerationState({
         status: "error",
         message: "Preview failed",
@@ -1424,6 +1479,9 @@ export function PlotimgStudio() {
     try {
       await beginPreviewGeneration(upload.uploadId, params);
     } catch (error) {
+      if (recoverIfSessionExpired(error)) {
+        return;
+      }
       setGenerationState({
         status: "error",
         message: "Preview failed",
@@ -1523,6 +1581,9 @@ export function PlotimgStudio() {
         { once: true },
       );
     } catch (error) {
+      if (recoverIfSessionExpired(error)) {
+        return;
+      }
       setCheckoutStage("idle");
       setCheckoutNotice(error instanceof Error ? error.message : "Checkout failed.");
     }
@@ -1558,6 +1619,9 @@ export function PlotimgStudio() {
       setCheckoutNotice(response.emailDelivered ? "Email sent." : response.emailReason || "Ready.");
       triggerDownload(response.downloadUrl);
     } catch (error) {
+      if (recoverIfSessionExpired(error)) {
+        return;
+      }
       setGenerationState({
         status: "error",
         message: "Download failed",

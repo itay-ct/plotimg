@@ -6,9 +6,11 @@ import {
   useDeferredValue,
   useEffect,
   useEffectEvent,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   ChevronDown,
   Download,
@@ -19,6 +21,7 @@ import {
   Plus,
   RefreshCcw,
   Sparkles,
+  TicketPercent,
   Upload,
   X,
 } from "lucide-react";
@@ -26,6 +29,7 @@ import {
 import { clsx } from "clsx";
 
 import {
+  createCheckout,
   createPreviewJob,
   generateSvg,
   getPreviewStatus,
@@ -37,6 +41,7 @@ import {
   DEFAULT_PREVIEW_LINE,
   estimateLineCount,
   getComplexityWarning,
+  PRICE_OPTIONS,
   SESSION_ID_STORAGE_KEY,
   SESSION_STORAGE_KEY,
   STARTER_IMAGES,
@@ -72,6 +77,12 @@ type EditorSnapshot = {
   originalImageSrc: string | null;
 };
 
+type UnlockContext =
+  | { mode: "paid"; purchaseId: string; checkoutId: string }
+  | { mode: "existing"; purchaseId: string };
+
+type CheckoutStage = "idle" | "creating" | "opening" | "awaiting-email";
+
 const TOOLTIPS = {
   processingHeight: "More rows = more vertical detail.",
   pixelWidth: "How wide each image pixel stretches into the wave drawing.",
@@ -101,18 +112,106 @@ function InfoTooltip({
   content: string;
   className?: string;
 }) {
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const bubbleRef = useRef<HTMLSpanElement | null>(null);
+  const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const [bubbleStyle, setBubbleStyle] = useState<{
+    left: number;
+    top: number;
+    placement: "top" | "bottom";
+  } | null>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  const updatePosition = useEffectEvent(() => {
+    if (!triggerRef.current || !bubbleRef.current) {
+      return;
+    }
+
+    const triggerRect = triggerRef.current.getBoundingClientRect();
+    const bubbleRect = bubbleRef.current.getBoundingClientRect();
+    const margin = 12;
+    const offset = 10;
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+
+    const clampedLeft = clamp(
+      triggerRect.left + triggerRect.width / 2 - bubbleRect.width / 2,
+      margin,
+      viewportWidth - bubbleRect.width - margin,
+    );
+
+    const fitsBelow = triggerRect.bottom + offset + bubbleRect.height <= viewportHeight - margin;
+    const fitsAbove = triggerRect.top - offset - bubbleRect.height >= margin;
+    const placement = !fitsBelow && fitsAbove ? "top" : "bottom";
+    const top =
+      placement === "bottom"
+        ? Math.min(triggerRect.bottom + offset, viewportHeight - bubbleRect.height - margin)
+        : Math.max(triggerRect.top - bubbleRect.height - offset, margin);
+
+    setBubbleStyle({
+      left: clampedLeft,
+      top,
+      placement,
+    });
+  });
+
+  useLayoutEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    updatePosition();
+
+    const handleWindowChange = () => {
+      updatePosition();
+    };
+
+    window.addEventListener("resize", handleWindowChange);
+    window.addEventListener("scroll", handleWindowChange, true);
+
+    return () => {
+      window.removeEventListener("resize", handleWindowChange);
+      window.removeEventListener("scroll", handleWindowChange, true);
+    };
+  }, [open, updatePosition]);
+
   return (
-    <span className={clsx("group/tooltip relative inline-flex", className)}>
+    <span className={clsx("relative inline-flex", className)}>
       <button
+        ref={triggerRef}
         type="button"
         className="inline-flex h-5 w-5 items-center justify-center rounded-full border border-[rgba(17,49,39,0.12)] bg-white/78 text-[rgba(17,49,39,0.56)] transition hover:text-[rgba(17,49,39,0.9)] focus-visible:outline-none"
         aria-label={content}
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setOpen(false)}
       >
         <Info className="h-3.5 w-3.5" />
       </button>
-      <span className="pointer-events-none absolute left-1/2 top-full z-20 hidden w-48 -translate-x-1/2 rounded-[1rem] bg-[rgba(17,49,39,0.96)] px-3 py-2 text-[11px] leading-5 text-white shadow-[0_16px_42px_rgba(17,49,39,0.26)] group-hover/tooltip:block group-focus-within/tooltip:block">
-        {content}
-      </span>
+      {mounted && open
+        ? createPortal(
+            <span
+              ref={bubbleRef}
+              className={clsx(
+                "pointer-events-none fixed z-[90] w-48 rounded-[1rem] bg-[rgba(17,49,39,0.96)] px-3 py-2 text-[11px] leading-5 text-white shadow-[0_16px_42px_rgba(17,49,39,0.26)]",
+                bubbleStyle ? "opacity-100" : "opacity-0",
+              )}
+              style={{
+                left: bubbleStyle?.left ?? -9999,
+                top: bubbleStyle?.top ?? -9999,
+              }}
+              data-placement={bubbleStyle?.placement ?? "bottom"}
+            >
+              {content}
+            </span>,
+            document.body,
+          )
+        : null}
     </span>
   );
 }
@@ -539,25 +638,30 @@ function EmptyPrompt() {
 function CheckoutModal({
   open,
   onClose,
+  onCheckoutStart,
   email,
   onEmailChange,
   onFulfillment,
   downloadResult,
-  isBusy,
+  checkoutStage,
   notice,
 }: {
   open: boolean;
   onClose: () => void;
+  onCheckoutStart: () => void;
   email: string;
   onEmailChange: (value: string) => void;
   onFulfillment: () => void;
   downloadResult: GenerateSvgResponse | null;
-  isBusy: boolean;
+  checkoutStage: CheckoutStage;
   notice: string | null;
 }) {
   if (!open) {
     return null;
   }
+
+  const showEmailStep = checkoutStage === "awaiting-email";
+  const isBusy = checkoutStage === "creating" || checkoutStage === "opening";
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-[rgba(10,23,19,0.34)] px-4 pb-4 pt-10 backdrop-blur-sm sm:items-center">
@@ -575,22 +679,51 @@ function CheckoutModal({
         </div>
 
         <div className="space-y-4 px-5 py-5">
-          <div className="rounded-[1.45rem] border border-[rgba(17,49,39,0.08)] bg-white/78 p-4">
-            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[rgba(17,49,39,0.88)]">
-              <Mail className="h-4 w-4" />
-              Email
+          {!showEmailStep ? (
+            <div className="rounded-[1.45rem] border border-[rgba(17,49,39,0.08)] bg-white/78 p-4">
+              <div className="mb-3 text-sm font-semibold text-[rgba(17,49,39,0.88)]">
+                One-time purchase
+              </div>
+              <div className="text-2xl font-semibold text-[rgba(17,49,39,0.92)]">
+                {PRICE_OPTIONS.ILS.label}
+              </div>
+              <p className="mt-3 text-sm leading-6 text-[rgba(17,49,39,0.72)]">
+                Complete checkout in the secure Polar overlay without leaving the page.
+              </p>
             </div>
-            <input
-              type="email"
-              value={email}
-              onChange={(event) => onEmailChange(event.target.value)}
-              placeholder="you@example.com"
-              className="w-full rounded-[1rem] border border-[rgba(17,49,39,0.12)] bg-white px-4 py-3 text-sm text-[rgba(17,49,39,0.88)] outline-none transition focus:border-[rgba(46,107,79,0.45)]"
-            />
-            <p className="mt-3 text-sm leading-6 text-[rgba(17,49,39,0.72)]">
-              We&apos;ll email the download link and start the SVG download immediately.
-            </p>
-          </div>
+          ) : null}
+
+          {!showEmailStep ? (
+            <div className="rounded-[1.45rem] border border-[rgba(17,49,39,0.08)] bg-white/78 p-4">
+              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[rgba(17,49,39,0.88)]">
+                <TicketPercent className="h-4 w-4" />
+                Discount Codes
+              </div>
+              <p className="text-sm leading-6 text-[rgba(17,49,39,0.72)]">
+                Enter your launch code directly inside Polar checkout. Your current production code
+                is <span className="font-semibold">CIRCUTIL100</span>.
+              </p>
+            </div>
+          ) : null}
+
+          {showEmailStep ? (
+            <div className="rounded-[1.45rem] border border-[rgba(17,49,39,0.08)] bg-white/78 p-4">
+              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[rgba(17,49,39,0.88)]">
+                <Mail className="h-4 w-4" />
+                Email
+              </div>
+              <input
+                type="email"
+                value={email}
+                onChange={(event) => onEmailChange(event.target.value)}
+                placeholder="you@example.com"
+                className="w-full rounded-[1rem] border border-[rgba(17,49,39,0.12)] bg-white px-4 py-3 text-sm text-[rgba(17,49,39,0.88)] outline-none transition focus:border-[rgba(46,107,79,0.45)]"
+              />
+              <p className="mt-3 text-sm leading-6 text-[rgba(17,49,39,0.72)]">
+                We&apos;ll email the download link and start the SVG download immediately.
+              </p>
+            </div>
+          ) : null}
 
           {notice ? (
             <div
@@ -617,16 +750,18 @@ function CheckoutModal({
 
           <button
             type="button"
-            onClick={onFulfillment}
-            disabled={!email.trim() || isBusy}
+            onClick={showEmailStep ? onFulfillment : onCheckoutStart}
+            disabled={showEmailStep ? !email.trim() : isBusy}
             className="inline-flex w-full items-center justify-center gap-2 rounded-[1.35rem] bg-[rgba(17,49,39,0.95)] px-4 py-3.5 text-sm font-semibold text-white shadow-[0_18px_40px_rgba(17,49,39,0.24)] transition hover:bg-[rgba(17,49,39,1)] disabled:cursor-not-allowed disabled:opacity-45"
           >
             {isBusy ? (
               <LoaderCircle className="h-4 w-4 animate-spin" />
-            ) : (
+            ) : showEmailStep ? (
               <Mail className="h-4 w-4" />
+            ) : (
+              <Download className="h-4 w-4" />
             )}
-            Email + download
+            {showEmailStep ? "Email + download" : "Continue to secure checkout"}
           </button>
         </div>
       </div>
@@ -637,6 +772,7 @@ function CheckoutModal({
 export function PlotimgStudio() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const activePreviewRequest = useRef(0);
+  const activeEmbeddedCheckout = useRef<{ close: () => void } | null>(null);
   const originalObjectUrlRef = useRef<string | null>(null);
 
   const [sessionId, setSessionId] = useState("");
@@ -651,7 +787,9 @@ export function PlotimgStudio() {
   const [generationState, setGenerationState] = useState<GenerationState>({
     status: "idle",
   });
+  const [checkoutStage, setCheckoutStage] = useState<CheckoutStage>("idle");
   const [checkoutNotice, setCheckoutNotice] = useState<string | null>(null);
+  const [unlockContext, setUnlockContext] = useState<UnlockContext | null>(null);
   const [email, setEmail] = useState("");
   const [downloadResult, setDownloadResult] = useState<GenerateSvgResponse | null>(null);
   const [starterBusyId, setStarterBusyId] = useState<string | null>(null);
@@ -692,7 +830,11 @@ export function PlotimgStudio() {
   });
 
   const clearUnlockProgress = useEffectEvent(() => {
+    activeEmbeddedCheckout.current?.close();
+    activeEmbeddedCheckout.current = null;
+    setCheckoutStage("idle");
     setCheckoutNotice(null);
+    setUnlockContext(null);
     setDownloadResult(null);
     setDownloadError(null);
     setEmail("");
@@ -831,6 +973,8 @@ export function PlotimgStudio() {
 
   useEffect(() => {
     return () => {
+      activeEmbeddedCheckout.current?.close();
+      activeEmbeddedCheckout.current = null;
       if (originalObjectUrlRef.current) {
         URL.revokeObjectURL(originalObjectUrlRef.current);
       }
@@ -895,6 +1039,8 @@ export function PlotimgStudio() {
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        activeEmbeddedCheckout.current?.close();
+        activeEmbeddedCheckout.current = null;
         setCheckoutModalOpen(false);
       }
     };
@@ -904,6 +1050,8 @@ export function PlotimgStudio() {
   }, [checkoutModalOpen]);
 
   const closeCheckoutModal = useEffectEvent(() => {
+    activeEmbeddedCheckout.current?.close();
+    activeEmbeddedCheckout.current = null;
     setCheckoutModalOpen(false);
   });
 
@@ -1031,8 +1179,106 @@ export function PlotimgStudio() {
     }
   }
 
+  async function handleCheckoutStart() {
+    if (!upload || !sessionId) {
+      return;
+    }
+
+    if (unlockContext) {
+      setCheckoutStage("awaiting-email");
+      setCheckoutNotice("Add your email for instant delivery.");
+      return;
+    }
+
+    setCheckoutStage("creating");
+    setCheckoutNotice("Opening secure checkout…");
+
+    try {
+      const response = await createCheckout({
+        uploadId: upload.uploadId,
+        params,
+        currency: "ILS",
+        sessionId,
+      });
+
+      if (response.mode === "existing") {
+        setUnlockContext({
+          mode: "existing",
+          purchaseId: response.purchaseId,
+        });
+        setCheckoutStage("awaiting-email");
+        setCheckoutNotice("Already unlocked in this session. Add your email to receive the file.");
+        return;
+      }
+
+      if (!response.checkoutId || !response.checkoutUrl) {
+        throw new Error("Secure checkout could not be created.");
+      }
+
+      const checkoutId = response.checkoutId;
+      const { PolarEmbedCheckout } = await import("@polar-sh/checkout/embed");
+      let checkoutSucceeded = false;
+
+      const checkout = await PolarEmbedCheckout.create(response.checkoutUrl, {
+        theme: "light",
+        onLoaded: () => {
+          setCheckoutStage("opening");
+          setCheckoutNotice(
+            "Secure checkout open. Enter CIRCUTIL100 there if you want to apply the launch discount.",
+          );
+        },
+      });
+
+      activeEmbeddedCheckout.current = checkout;
+
+      checkout.addEventListener(
+        "confirmed",
+        () => {
+          setCheckoutNotice("Payment confirmed. Finalizing with Polar…");
+        },
+        { once: true },
+      );
+
+      checkout.addEventListener(
+        "success",
+        (event) => {
+          checkoutSucceeded = true;
+          event.preventDefault();
+          activeEmbeddedCheckout.current = null;
+          setUnlockContext({
+            mode: "paid",
+            purchaseId: response.purchaseId,
+            checkoutId,
+          });
+          setCheckoutStage("awaiting-email");
+          setCheckoutNotice("Payment confirmed. Add your email for instant delivery.");
+          checkout.close();
+        },
+        { once: true },
+      );
+
+      checkout.addEventListener(
+        "close",
+        () => {
+          if (activeEmbeddedCheckout.current === checkout) {
+            activeEmbeddedCheckout.current = null;
+          }
+
+          if (!checkoutSucceeded) {
+            setCheckoutStage("idle");
+            setCheckoutNotice("Checkout closed. Reopen it whenever you're ready.");
+          }
+        },
+        { once: true },
+      );
+    } catch (error) {
+      setCheckoutStage("idle");
+      setCheckoutNotice(error instanceof Error ? error.message : "Checkout failed.");
+    }
+  }
+
   async function handleFulfillment() {
-    if (!upload || !sessionId || !email.trim()) {
+    if (!upload || !sessionId || !email.trim() || !unlockContext) {
       return;
     }
 
@@ -1047,8 +1293,9 @@ export function PlotimgStudio() {
         uploadId: upload.uploadId,
         params,
         sessionId,
-        currency: "USD",
-        couponCode: "FREE",
+        currency: "ILS",
+        purchaseId: unlockContext.purchaseId,
+        checkoutId: unlockContext.mode === "paid" ? unlockContext.checkoutId : undefined,
         email,
       });
 
@@ -1185,7 +1432,10 @@ export function PlotimgStudio() {
                   triggerDownload(downloadResult.downloadUrl);
                   return;
                 }
-                setCheckoutNotice("Add your email for instant delivery.");
+                setCheckoutStage(unlockContext ? "awaiting-email" : "idle");
+                setCheckoutNotice(
+                  unlockContext ? "Add your email for instant delivery." : null,
+                );
                 setCheckoutModalOpen(true);
               }}
               disabled={downloadDisabled}
@@ -1205,11 +1455,12 @@ export function PlotimgStudio() {
       <CheckoutModal
         open={checkoutModalOpen}
         onClose={closeCheckoutModal}
+        onCheckoutStart={() => void handleCheckoutStart()}
         email={email}
         onEmailChange={setEmail}
         onFulfillment={() => void handleFulfillment()}
         downloadResult={downloadResult}
-        isBusy={generationState.status === "fulfilling"}
+        checkoutStage={checkoutStage}
         notice={checkoutNotice}
       />
 

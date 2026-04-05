@@ -23,6 +23,16 @@ function getPresentmentCurrency(currency: "USD" | "ILS"): "usd" | "ils" {
   return currency === "USD" ? "usd" : "ils";
 }
 
+function isPolarRateLimitError(error: unknown) {
+  return error instanceof Error && error.message.includes("Status 429");
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 function formatPriceLabel(currency: "USD" | "ILS", amountInMinorUnits: number) {
   const formatted = new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -105,22 +115,57 @@ export async function createCheckoutSession(input: {
     throw new Error(`Polar product is missing for currency ${input.currency}.`);
   }
 
-  const checkout = await polar.checkouts.create({
-    allowDiscountCodes: config.POLAR_ALLOW_DISCOUNT_CODES,
-    currency: getPresentmentCurrency(input.currency),
-    customerEmail: input.customerEmail,
-    embedOrigin: input.appOrigin,
-    externalCustomerId: input.sessionId,
-    metadata: {
-      artifactId: input.artifactId,
-      purchaseId: input.purchaseId,
-      renderFingerprint: input.renderFingerprint,
-      sessionId: input.sessionId,
-    },
-    products: [productId],
-    returnUrl: input.appOrigin,
-    successUrl: `${input.appOrigin}/?purchaseId=${input.purchaseId}&checkout_id={CHECKOUT_ID}`,
-  });
+  const createSession = () =>
+    polar.checkouts.create({
+      allowDiscountCodes: config.POLAR_ALLOW_DISCOUNT_CODES,
+      currency: getPresentmentCurrency(input.currency),
+      customerEmail: input.customerEmail,
+      embedOrigin: input.appOrigin,
+      externalCustomerId: input.sessionId,
+      metadata: {
+        artifactId: input.artifactId,
+        purchaseId: input.purchaseId,
+        renderFingerprint: input.renderFingerprint,
+        sessionId: input.sessionId,
+      },
+      products: [productId],
+      returnUrl: input.appOrigin,
+      successUrl: `${input.appOrigin}/?purchaseId=${input.purchaseId}&checkout_id={CHECKOUT_ID}`,
+    });
+
+  let checkout;
+
+  try {
+    checkout = await createSession();
+  } catch (error) {
+    if (!isPolarRateLimitError(error)) {
+      throw error;
+    }
+
+    await sleep(1200);
+
+    try {
+      checkout = await createSession();
+    } catch (retryError) {
+      if (!isPolarRateLimitError(retryError)) {
+        throw retryError;
+      }
+
+      await sleep(2200);
+
+      try {
+        checkout = await createSession();
+      } catch (finalError) {
+        if (isPolarRateLimitError(finalError)) {
+          throw new Error(
+            "Secure checkout is temporarily busy. Please wait a few seconds and try again.",
+          );
+        }
+
+        throw finalError;
+      }
+    }
+  }
 
   return {
     checkoutId: checkout.id,

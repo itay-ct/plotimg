@@ -623,6 +623,17 @@ server.post("/checkout", async (request, reply) => {
     });
   }
 
+  const pendingPurchase = database.findPendingPurchase(sessionId, renderFingerprint, body.currency);
+  if (pendingPurchase && pendingPurchase.checkoutId && pendingPurchase.checkoutUrl) {
+    return reply.send({
+      mode: "payment",
+      artifactId: artifact.id,
+      purchaseId: pendingPurchase.id,
+      checkoutId: pendingPurchase.checkoutId,
+      checkoutUrl: pendingPurchase.checkoutUrl,
+    });
+  }
+
   const purchaseId = randomUUID();
   const createdAt = new Date().toISOString();
   database.insertPurchase({

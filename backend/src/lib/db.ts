@@ -340,4 +340,25 @@ export const database = {
       .get(sessionId, renderFingerprint) as Record<string, unknown> | undefined;
     return row ? toPurchase(row) : null;
   },
+
+  findPendingPurchase(
+    sessionId: string,
+    renderFingerprint: string,
+    currency: PurchaseRecord["currency"],
+  ): PurchaseRecord | null {
+    const row = db
+      .prepare(
+        `SELECT * FROM purchases
+         WHERE session_id = ?
+         AND render_fingerprint = ?
+         AND currency = ?
+         AND status = 'pending'
+         AND checkout_id IS NOT NULL
+         AND checkout_url IS NOT NULL
+         ORDER BY created_at DESC
+         LIMIT 1`,
+      )
+      .get(sessionId, renderFingerprint, currency) as Record<string, unknown> | undefined;
+    return row ? toPurchase(row) : null;
+  },
 };

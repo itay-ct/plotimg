@@ -82,6 +82,7 @@ type UnlockContext =
   | { mode: "existing"; purchaseId: string };
 
 type CheckoutStage = "idle" | "creating" | "opening" | "awaiting-email";
+type CheckoutCurrency = keyof typeof PRICE_OPTIONS;
 
 const TOOLTIPS = {
   processingHeight: "More rows = more vertical detail.",
@@ -639,6 +640,8 @@ function CheckoutModal({
   open,
   onClose,
   onCheckoutStart,
+  checkoutCurrency,
+  onCheckoutCurrencyChange,
   email,
   onEmailChange,
   onFulfillment,
@@ -649,6 +652,8 @@ function CheckoutModal({
   open: boolean;
   onClose: () => void;
   onCheckoutStart: () => void;
+  checkoutCurrency: CheckoutCurrency;
+  onCheckoutCurrencyChange: (currency: CheckoutCurrency) => void;
   email: string;
   onEmailChange: (value: string) => void;
   onFulfillment: () => void;
@@ -681,14 +686,38 @@ function CheckoutModal({
         <div className="space-y-4 px-5 py-5">
           {!showEmailStep ? (
             <div className="rounded-[1.45rem] border border-[rgba(17,49,39,0.08)] bg-white/78 p-4">
-              <div className="mb-3 text-sm font-semibold text-[rgba(17,49,39,0.88)]">
-                One-time purchase
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="text-sm font-semibold text-[rgba(17,49,39,0.88)]">
+                  One-time purchase
+                </div>
+                <div className="inline-flex rounded-full border border-[rgba(17,49,39,0.08)] bg-[rgba(17,49,39,0.04)] p-1">
+                  {(Object.keys(PRICE_OPTIONS) as CheckoutCurrency[]).map((currency) => {
+                    const selected = currency === checkoutCurrency;
+                    return (
+                      <button
+                        key={currency}
+                        type="button"
+                        onClick={() => onCheckoutCurrencyChange(currency)}
+                        disabled={isBusy}
+                        className={clsx(
+                          "rounded-full px-3 py-1.5 text-xs font-semibold transition",
+                          selected
+                            ? "bg-[rgba(17,49,39,0.92)] text-white shadow-[0_10px_24px_rgba(17,49,39,0.14)]"
+                            : "text-[rgba(17,49,39,0.66)] hover:text-[rgba(17,49,39,0.92)]",
+                        )}
+                      >
+                        {currency}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
               <div className="text-2xl font-semibold text-[rgba(17,49,39,0.92)]">
-                {PRICE_OPTIONS.ILS.label}
+                {PRICE_OPTIONS[checkoutCurrency].label}
               </div>
               <p className="mt-3 text-sm leading-6 text-[rgba(17,49,39,0.72)]">
-                Complete checkout in the secure Polar overlay without leaving the page.
+                {PRICE_OPTIONS[checkoutCurrency].helper}. Complete checkout in the secure Polar
+                overlay without leaving the page.
               </p>
             </div>
           ) : null}
@@ -787,6 +816,7 @@ export function PlotimgStudio() {
   const [generationState, setGenerationState] = useState<GenerationState>({
     status: "idle",
   });
+  const [checkoutCurrency, setCheckoutCurrency] = useState<CheckoutCurrency>("USD");
   const [checkoutStage, setCheckoutStage] = useState<CheckoutStage>("idle");
   const [checkoutNotice, setCheckoutNotice] = useState<string | null>(null);
   const [unlockContext, setUnlockContext] = useState<UnlockContext | null>(null);
@@ -811,6 +841,15 @@ export function PlotimgStudio() {
     typeof activeLineCount === "number" ? getComplexityWarning(activeLineCount) : null;
   const downloadDisabled = !upload || !previewReady || pendingChanges || previewBusy;
   const showDownloadCta = latestPreviewReady || !!downloadResult;
+
+  useEffect(() => {
+    const locale = navigator.language.toLowerCase();
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+    if (locale.startsWith("he") || timeZone === "Asia/Jerusalem") {
+      setCheckoutCurrency("ILS");
+    }
+  }, []);
 
   const persistSnapshot = useEffectEvent((snapshot: EditorSnapshot) => {
     const serializedSnapshot = JSON.stringify(snapshot);
@@ -1197,7 +1236,7 @@ export function PlotimgStudio() {
       const response = await createCheckout({
         uploadId: upload.uploadId,
         params,
-        currency: "ILS",
+        currency: checkoutCurrency,
         sessionId,
       });
 
@@ -1293,7 +1332,7 @@ export function PlotimgStudio() {
         uploadId: upload.uploadId,
         params,
         sessionId,
-        currency: "ILS",
+        currency: checkoutCurrency,
         purchaseId: unlockContext.purchaseId,
         checkoutId: unlockContext.mode === "paid" ? unlockContext.checkoutId : undefined,
         email,
@@ -1449,10 +1488,23 @@ export function PlotimgStudio() {
         </div>
       ) : null}
 
+      <footer className="mt-6 pb-2 text-center text-[11px] tracking-[0.12em] text-[rgba(17,49,39,0.34)]">
+        <span>v1.0</span>
+        <span className="mx-2">·</span>
+        <a
+          href="mailto:support@plotimg.com"
+          className="transition hover:text-[rgba(17,49,39,0.58)]"
+        >
+          support@plotimg.com
+        </a>
+      </footer>
+
       <CheckoutModal
         open={checkoutModalOpen}
         onClose={closeCheckoutModal}
         onCheckoutStart={() => void handleCheckoutStart()}
+        checkoutCurrency={checkoutCurrency}
+        onCheckoutCurrencyChange={setCheckoutCurrency}
         email={email}
         onEmailChange={setEmail}
         onFulfillment={() => void handleFulfillment()}

@@ -52,7 +52,7 @@ export const DEFAULT_PARAMETERS: PlotParameters = {
 
 export const DEFAULT_PREVIEW_BACKGROUND = "#ffffff";
 export const DEFAULT_PREVIEW_LINE = "#111111";
-export const SESSION_STORAGE_KEY = "plotimg-editor-state-v6";
+export const SESSION_STORAGE_KEY = "plotimg-editor-state-v7";
 export const SESSION_ID_STORAGE_KEY = "plotimg-session-id";
 
 export const STARTER_IMAGES = [

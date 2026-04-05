@@ -93,12 +93,12 @@ type CheckoutStage =
 type EditorSnapshot = {
   upload: UploadRecord | null;
   params: PlotParameters;
-  preview: PreviewResult | null;
   renderedParams: PlotParameters | null;
   previewBackground: string;
   previewLine: string;
   couponCode: string;
   selectedCurrency: "USD" | "ILS";
+  originalImageSrc: string | null;
 };
 
 const TOOLTIPS = {
@@ -792,7 +792,20 @@ export function PlotimgStudio() {
   const showDownloadCta = latestPreviewReady || !!downloadResult;
 
   const persistSnapshot = useEffectEvent((snapshot: EditorSnapshot) => {
-    window.sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(snapshot));
+    const serializedSnapshot = JSON.stringify(snapshot);
+
+    try {
+      window.sessionStorage.setItem(SESSION_STORAGE_KEY, serializedSnapshot);
+    } catch (error) {
+      console.warn("Plotimg snapshot persistence skipped.", error);
+
+      try {
+        window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
+        window.sessionStorage.setItem(SESSION_STORAGE_KEY, serializedSnapshot);
+      } catch (retryError) {
+        console.warn("Plotimg snapshot persistence disabled for this session.", retryError);
+      }
+    }
   });
 
   const clearUnlockProgress = useEffectEvent(() => {
@@ -957,17 +970,13 @@ export function PlotimgStudio() {
         const parsed = JSON.parse(savedSnapshot) as EditorSnapshot;
         setUpload(parsed.upload);
         setParams(parsed.params);
-        setPreview(parsed.preview);
-        setRenderedParams(parsed.renderedParams ?? (parsed.preview ? parsed.params : null));
+        setRenderedParams(parsed.renderedParams ?? null);
         setPreviewBackground(parsed.previewBackground);
         setPreviewLine(parsed.previewLine);
         setCouponCode(parsed.couponCode);
         setSelectedCurrency(parsed.selectedCurrency);
-        if (parsed.preview) {
-          setGenerationState({
-            status: "ready",
-            message: "Ready",
-          });
+        if (parsed.originalImageSrc) {
+          updateOriginalImageSource(parsed.originalImageSrc);
         }
       } catch {
         window.sessionStorage.removeItem(SESSION_STORAGE_KEY);
@@ -985,18 +994,18 @@ export function PlotimgStudio() {
     persistSnapshot({
       upload,
       params,
-      preview,
       renderedParams,
       previewBackground,
       previewLine,
       couponCode,
       selectedCurrency,
+      originalImageSrc: originalImageSrc?.startsWith("blob:") ? null : originalImageSrc,
     });
   }, [
     couponCode,
+    originalImageSrc,
     params,
     persistSnapshot,
-    preview,
     renderedParams,
     previewBackground,
     previewLine,

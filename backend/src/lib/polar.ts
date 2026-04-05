@@ -62,10 +62,18 @@ async function getProductPriceLabel(currency: "USD" | "ILS") {
   return formatPriceLabel(currency, matchingPrice.priceAmount);
 }
 
+async function getSafeProductPriceLabel(currency: "USD" | "ILS") {
+  try {
+    return await getProductPriceLabel(currency);
+  } catch {
+    return null;
+  }
+}
+
 export async function getCheckoutDisplayPrices() {
   const [usdLabel, ilsLabel] = await Promise.all([
-    getProductPriceLabel("USD"),
-    getProductPriceLabel("ILS"),
+    getSafeProductPriceLabel("USD"),
+    getSafeProductPriceLabel("ILS"),
   ]);
 
   return {

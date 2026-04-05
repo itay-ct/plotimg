@@ -380,10 +380,10 @@ server.get("/checkout-config", async () => {
     allowCheckoutDiscountCodes: config.POLAR_ALLOW_DISCOUNT_CODES,
     prices: {
       USD: {
-        label: prices.USD.label ?? "$9.90 USD",
+        label: prices.USD.label ?? "$3.99 USD",
       },
       ILS: {
-        label: prices.ILS.label ?? "₪10.00 ILS",
+        label: prices.ILS.label ?? "₪9.90 ILS",
       },
     },
   };

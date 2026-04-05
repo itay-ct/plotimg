@@ -89,10 +89,10 @@ export const STARTER_IMAGES = [
 
 export const PRICE_OPTIONS: CheckoutPriceMap = {
   USD: {
-    label: "$9.90 USD",
+    label: "$3.99 USD",
   },
   ILS: {
-    label: "₪10.00 ILS",
+    label: "₪9.90 ILS",
   },
 };
 

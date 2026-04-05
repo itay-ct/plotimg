@@ -21,7 +21,6 @@ import {
   Plus,
   RefreshCcw,
   Sparkles,
-  TicketPercent,
   Upload,
   X,
 } from "lucide-react";
@@ -835,19 +834,6 @@ function CheckoutModal({
             </div>
           ) : null}
 
-          {!showEmailStep ? (
-            <div className="rounded-[1.45rem] border border-[rgba(17,49,39,0.08)] bg-white/78 p-4">
-              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[rgba(17,49,39,0.88)]">
-                <TicketPercent className="h-4 w-4" />
-                Discount Codes
-              </div>
-              <p className="text-sm leading-6 text-[rgba(17,49,39,0.72)]">
-                Enter your launch code directly inside Polar checkout. Your current production code
-                is <span className="font-semibold">CIRCUTIL100</span>.
-              </p>
-            </div>
-          ) : null}
-
           {showEmailStep ? (
             <div className="rounded-[1.45rem] border border-[rgba(17,49,39,0.08)] bg-white/78 p-4">
               <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[rgba(17,49,39,0.88)]">
@@ -1375,9 +1361,7 @@ export function PlotimgStudio() {
         theme: "light",
         onLoaded: () => {
           setCheckoutStage("opening");
-          setCheckoutNotice(
-            "Secure checkout open. Enter CIRCUTIL100 there if you want to apply the launch discount.",
-          );
+          setCheckoutNotice("Secure checkout open. Finish payment to unlock your SVG.");
         },
       });
 

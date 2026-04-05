@@ -21,10 +21,6 @@ const caveat = Caveat({
 export const metadata: Metadata = {
   title: "Plotimg",
   description: "Turn portraits into plotter-friendly SVG wave art with a familiar consumer crafting workflow.",
-  icons: {
-    icon: "/favicon.svg",
-    shortcut: "/favicon.svg",
-  },
 };
 
 export const viewport: Viewport = {

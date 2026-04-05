@@ -828,8 +828,7 @@ function CheckoutModal({
                 {PRICE_OPTIONS[checkoutCurrency].label}
               </div>
               <p className="mt-3 text-sm leading-6 text-[rgba(17,49,39,0.72)]">
-                {PRICE_OPTIONS[checkoutCurrency].helper}. Complete checkout in the secure Polar
-                overlay without leaving the page.
+                Complete checkout in the secure Polar overlay without leaving the page.
               </p>
             </div>
           ) : null}

@@ -81,11 +81,9 @@ export const STARTER_IMAGES = [
 export const PRICE_OPTIONS = {
   USD: {
     label: "$3.99 USD",
-    helper: "Best for international buyers",
   },
   ILS: {
     label: "₪19.90 ILS",
-    helper: "Fast local checkout",
   },
 } as const;
 

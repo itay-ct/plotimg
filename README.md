@@ -74,7 +74,7 @@ Plotimg is a split frontend/backend web app for turning uploaded portraits into 
 ### Railway backend
 
 - Create a Railway service using `backend` as the service root.
-- Railway can build directly from the included `backend/Dockerfile`.
+- The repo also includes a root [railway.json](/Users/itay.tevel/plotimg/railway.json) so Railway can deploy the backend from the monorepo root with backend-only build, start, healthcheck, and watch-path settings.
 - Mount persistent storage and point `STORAGE_DIR` at that mounted path.
 - Set the exact production frontend URL in `FRONTEND_ORIGIN`.
 - Add `FRONTEND_ORIGIN_REGEX` for Vercel preview deploys, for example `^https://plotimg-.*\\.vercel\\.app$`.

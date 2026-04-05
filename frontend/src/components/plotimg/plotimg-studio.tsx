@@ -1319,11 +1319,8 @@ export function PlotimgStudio() {
   return (
     <main className="mx-auto flex min-h-screen max-w-[1600px] flex-col px-4 pb-8 pt-4 sm:px-6 lg:px-8">
       <div className="grid items-start gap-5 lg:grid-cols-[19rem_minmax(0,1fr)]">
-        <details className="plotimg-panel plotimg-shadow overflow-hidden rounded-[2rem] border border-white/70 lg:hidden" open>
-          <summary className="cursor-pointer list-none px-5 py-4 text-sm font-semibold text-[rgba(17,49,39,0.84)]">
-            Controls
-          </summary>
-          <div className="border-t border-[rgba(17,49,39,0.08)] px-5 pb-5 pt-5">
+        <div className="plotimg-panel plotimg-shadow overflow-hidden rounded-[2rem] border border-white/70 lg:hidden">
+          <div className="px-5 py-5">
             <ControlRail
               upload={upload}
               hasRenderedPreview={!!preview}
@@ -1344,7 +1341,7 @@ export function PlotimgStudio() {
               pendingChanges={pendingChanges}
             />
           </div>
-        </details>
+        </div>
 
         <aside className="plotimg-panel plotimg-shadow hidden rounded-[2rem] border border-white/70 lg:block">
           <div className="max-h-[calc(100vh-2.5rem)] overflow-y-auto px-5 py-5">

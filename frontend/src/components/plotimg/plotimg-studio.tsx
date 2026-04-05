@@ -33,7 +33,6 @@ import {
   generateSvg,
   getPreviewStatus,
   uploadImage,
-  validateCoupon,
 } from "@/lib/api";
 import {
   DEFAULT_PARAMETERS,
@@ -68,14 +67,6 @@ type GenerationState =
       error: string;
     };
 
-type CouponState = {
-  status: "idle" | "checking" | "valid" | "invalid";
-  free: boolean;
-  code?: string;
-  message?: string;
-  allowCheckoutDiscountCodes: boolean;
-};
-
 type UnlockContext =
   | { mode: "free"; couponCode: string }
   | { mode: "paid"; purchaseId: string; checkoutId: string }
@@ -84,7 +75,7 @@ type UnlockContext =
 type CheckoutStage =
   | "idle"
   | "creating"
-  | "redirecting"
+  | "opening"
   | "awaiting-email"
   | "fulfilling"
   | "completed"
@@ -96,7 +87,6 @@ type EditorSnapshot = {
   renderedParams: PlotParameters | null;
   previewBackground: string;
   previewLine: string;
-  couponCode: string;
   selectedCurrency: "USD" | "ILS";
   originalImageSrc: string | null;
 };
@@ -294,6 +284,7 @@ function StarterPicker({
 
 function ControlRail({
   upload,
+  hasRenderedPreview,
   params,
   previewBackground,
   previewLine,
@@ -311,6 +302,7 @@ function ControlRail({
   pendingChanges,
 }: {
   upload: UploadRecord | null;
+  hasRenderedPreview: boolean;
   params: PlotParameters;
   previewBackground: string;
   previewLine: string;
@@ -361,129 +353,133 @@ function ControlRail({
         />
       </div>
 
-      <div className="rounded-[1.55rem] border border-[rgba(17,49,39,0.08)] bg-white/76">
-        <button
-          type="button"
-          onClick={() => setCustomizeOpen((current) => !current)}
-          className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-semibold text-[rgba(17,49,39,0.84)]"
-          aria-expanded={customizeOpen}
-        >
-          <span>Customize</span>
-          <ChevronDown
-            className={clsx(
-              "h-4 w-4 text-[rgba(17,49,39,0.56)] transition-transform",
-              customizeOpen && "rotate-180",
-            )}
-          />
-        </button>
+      {hasRenderedPreview ? (
+        <>
+          <div className="rounded-[1.55rem] border border-[rgba(17,49,39,0.08)] bg-white/76">
+            <button
+              type="button"
+              onClick={() => setCustomizeOpen((current) => !current)}
+              className="flex w-full items-center justify-between px-4 py-3 text-left text-sm font-semibold text-[rgba(17,49,39,0.84)]"
+              aria-expanded={customizeOpen}
+            >
+              <span>Customize</span>
+              <ChevronDown
+                className={clsx(
+                  "h-4 w-4 text-[rgba(17,49,39,0.56)] transition-transform",
+                  customizeOpen && "rotate-180",
+                )}
+              />
+            </button>
 
-        {customizeOpen ? (
-          <div className="space-y-2.5 border-t border-[rgba(17,49,39,0.08)] px-3 pb-3 pt-2.5">
-          <RangeField
-            id="processing-height"
-            label="Height"
-            tooltip={TOOLTIPS.processingHeight}
-            min={80}
-            max={260}
-            step={1}
-            value={params.processingHeight}
-            valueLabel={`${params.processingHeight}px`}
-            onChange={(value) => onParamChange("processingHeight", value)}
-          />
-          <RangeField
-            id="pixel-width"
-            label="Pixel width"
-            tooltip={TOOLTIPS.pixelWidth}
-            min={3}
-            max={14}
-            step={0.5}
-            value={params.pixelWidth}
-            valueLabel={`${params.pixelWidth.toFixed(1)} px`}
-            onChange={(value) => onParamChange("pixelWidth", value)}
-          />
-          <RangeField
-            id="resolution"
-            label="Detail"
-            tooltip={TOOLTIPS.resolution}
-            min={0.25}
-            max={3}
-            step={0.25}
-            value={params.resolution}
-            valueLabel={`${params.resolution.toFixed(2)}x`}
-            onChange={(value) => onParamChange("resolution", value)}
-          />
-          <RangeField
-            id="max-amplitude"
-            label="Amplitude"
-            tooltip={TOOLTIPS.maxAmplitude}
-            min={0.5}
-            max={6}
-            step={0.1}
-            value={params.maxAmplitude}
-            valueLabel={params.maxAmplitude.toFixed(1)}
-            onChange={(value) => onParamChange("maxAmplitude", value)}
-          />
-          <RangeField
-            id="max-frequency"
-            label="Frequency"
-            tooltip={TOOLTIPS.maxFrequency}
-            min={2}
-            max={18}
-            step={0.5}
-            value={params.maxFrequency}
-            valueLabel={params.maxFrequency.toFixed(1)}
-            onChange={(value) => onParamChange("maxFrequency", value)}
-          />
+            {customizeOpen ? (
+              <div className="space-y-2.5 border-t border-[rgba(17,49,39,0.08)] px-3 pb-3 pt-2.5">
+                <RangeField
+                  id="processing-height"
+                  label="Height"
+                  tooltip={TOOLTIPS.processingHeight}
+                  min={80}
+                  max={260}
+                  step={1}
+                  value={params.processingHeight}
+                  valueLabel={`${params.processingHeight}px`}
+                  onChange={(value) => onParamChange("processingHeight", value)}
+                />
+                <RangeField
+                  id="pixel-width"
+                  label="Pixel width"
+                  tooltip={TOOLTIPS.pixelWidth}
+                  min={3}
+                  max={14}
+                  step={0.5}
+                  value={params.pixelWidth}
+                  valueLabel={`${params.pixelWidth.toFixed(1)} px`}
+                  onChange={(value) => onParamChange("pixelWidth", value)}
+                />
+                <RangeField
+                  id="resolution"
+                  label="Detail"
+                  tooltip={TOOLTIPS.resolution}
+                  min={0.25}
+                  max={3}
+                  step={0.25}
+                  value={params.resolution}
+                  valueLabel={`${params.resolution.toFixed(2)}x`}
+                  onChange={(value) => onParamChange("resolution", value)}
+                />
+                <RangeField
+                  id="max-amplitude"
+                  label="Amplitude"
+                  tooltip={TOOLTIPS.maxAmplitude}
+                  min={0.5}
+                  max={6}
+                  step={0.1}
+                  value={params.maxAmplitude}
+                  valueLabel={params.maxAmplitude.toFixed(1)}
+                  onChange={(value) => onParamChange("maxAmplitude", value)}
+                />
+                <RangeField
+                  id="max-frequency"
+                  label="Frequency"
+                  tooltip={TOOLTIPS.maxFrequency}
+                  min={2}
+                  max={18}
+                  step={0.5}
+                  value={params.maxFrequency}
+                  valueLabel={params.maxFrequency.toFixed(1)}
+                  onChange={(value) => onParamChange("maxFrequency", value)}
+                />
 
-          <div className="space-y-2.5">
-            <ColorField
-              id="preview-background"
-              label="Background"
-              tooltip={TOOLTIPS.previewBackground}
-              value={previewBackground}
-              onChange={onPreviewBackgroundChange}
-            />
-            <ColorField
-              id="preview-line"
-              label="Line"
-              tooltip={TOOLTIPS.previewLine}
-              value={previewLine}
-              onChange={onPreviewLineChange}
-            />
+                <div className="space-y-2.5">
+                  <ColorField
+                    id="preview-background"
+                    label="Background"
+                    tooltip={TOOLTIPS.previewBackground}
+                    value={previewBackground}
+                    onChange={onPreviewBackgroundChange}
+                  />
+                  <ColorField
+                    id="preview-line"
+                    label="Line"
+                    tooltip={TOOLTIPS.previewLine}
+                    value={previewLine}
+                    onChange={onPreviewLineChange}
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={onReset}
+                  className="w-full rounded-full border border-[rgba(17,49,39,0.12)] bg-white/72 px-4 py-2 text-[13px] font-medium text-[rgba(17,49,39,0.62)] transition hover:border-[rgba(17,49,39,0.22)] hover:text-[rgba(17,49,39,0.88)]"
+                >
+                  Reset to defaults
+                </button>
+              </div>
+            ) : null}
           </div>
 
-          <button
-            type="button"
-            onClick={onReset}
-            className="w-full rounded-full border border-[rgba(17,49,39,0.12)] bg-white/72 px-4 py-2 text-[13px] font-medium text-[rgba(17,49,39,0.62)] transition hover:border-[rgba(17,49,39,0.22)] hover:text-[rgba(17,49,39,0.88)]"
-          >
-            Reset to defaults
-          </button>
+          <div>
+            <button
+              type="button"
+              onClick={onGeneratePreview}
+              disabled={!upload || previewBusy}
+              className={clsx(
+                "inline-flex w-full items-center justify-center gap-2 rounded-[1.4rem] px-4 py-3.5 text-sm font-semibold transition",
+                pendingChanges
+                  ? "bg-[rgba(46,107,79,0.94)] text-white shadow-[0_16px_36px_rgba(46,107,79,0.26)]"
+                  : "border border-[rgba(17,49,39,0.12)] bg-white/82 text-[rgba(17,49,39,0.72)]",
+                (!upload || previewBusy) && "cursor-not-allowed opacity-45",
+              )}
+            >
+              {previewBusy ? (
+                <LoaderCircle className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCcw className="h-4 w-4" />
+              )}
+              Generate Preview
+            </button>
           </div>
-        ) : null}
-      </div>
-
-      <div>
-        <button
-          type="button"
-          onClick={onGeneratePreview}
-          disabled={!upload || previewBusy}
-          className={clsx(
-            "inline-flex w-full items-center justify-center gap-2 rounded-[1.4rem] px-4 py-3.5 text-sm font-semibold transition",
-            pendingChanges
-              ? "bg-[rgba(46,107,79,0.94)] text-white shadow-[0_16px_36px_rgba(46,107,79,0.26)]"
-              : "border border-[rgba(17,49,39,0.12)] bg-white/82 text-[rgba(17,49,39,0.72)]",
-            (!upload || previewBusy) && "cursor-not-allowed opacity-45",
-          )}
-        >
-          {previewBusy ? (
-            <LoaderCircle className="h-4 w-4 animate-spin" />
-          ) : (
-            <RefreshCcw className="h-4 w-4" />
-          )}
-          Generate Preview
-        </button>
-      </div>
+        </>
+      ) : null}
     </div>
   );
 }
@@ -564,10 +560,6 @@ function CheckoutModal({
   onClose,
   selectedCurrency,
   onCurrencyChange,
-  couponCode,
-  onCouponCodeChange,
-  couponState,
-  onValidateCoupon,
   checkoutStage,
   checkoutNotice,
   email,
@@ -580,10 +572,6 @@ function CheckoutModal({
   onClose: () => void;
   selectedCurrency: "USD" | "ILS";
   onCurrencyChange: (currency: "USD" | "ILS") => void;
-  couponCode: string;
-  onCouponCodeChange: (value: string) => void;
-  couponState: CouponState;
-  onValidateCoupon: () => void;
   checkoutStage: CheckoutStage;
   checkoutNotice: string | null;
   email: string;
@@ -639,36 +627,12 @@ function CheckoutModal({
             <div className="rounded-[1.45rem] border border-[rgba(17,49,39,0.08)] bg-white/78 p-4">
               <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[rgba(17,49,39,0.88)]">
                 <TicketPercent className="h-4 w-4" />
-                Coupon
+                Discount Codes
               </div>
-              <div className="flex gap-2">
-                <input
-                  value={couponCode}
-                  onChange={(event) => onCouponCodeChange(event.target.value.toUpperCase())}
-                  placeholder="FREE"
-                  className="min-w-0 flex-1 rounded-full border border-[rgba(17,49,39,0.12)] bg-white px-4 py-2.5 text-sm text-[rgba(17,49,39,0.88)] outline-none transition focus:border-[rgba(46,107,79,0.45)]"
-                />
-                <button
-                  type="button"
-                  onClick={onValidateCoupon}
-                  disabled={couponState.status === "checking"}
-                  className="rounded-full border border-[rgba(17,49,39,0.12)] bg-white px-4 py-2.5 text-sm font-semibold text-[rgba(17,49,39,0.72)] transition hover:border-[rgba(17,49,39,0.22)] disabled:cursor-not-allowed disabled:opacity-45"
-                >
-                  {couponState.status === "checking" ? "Checking..." : "Apply"}
-                </button>
-              </div>
-              {couponState.message ? (
-                <div
-                  className={clsx(
-                    "mt-3 rounded-[1rem] px-3 py-2 text-sm",
-                    couponState.status === "valid"
-                      ? "bg-[rgba(90,162,127,0.12)] text-[rgba(31,87,62,0.92)]"
-                      : "bg-[rgba(173,71,44,0.08)] text-[rgba(122,40,19,0.92)]",
-                  )}
-                >
-                  {couponState.message}
-                </div>
-              ) : null}
+              <p className="text-sm leading-6 text-[rgba(17,49,39,0.72)]">
+                Enter any promo or launch code directly inside the secure Polar checkout overlay
+                after you continue.
+              </p>
             </div>
           ) : null}
 
@@ -717,20 +681,18 @@ function CheckoutModal({
             disabled={
               showEmailStep
                 ? !email.trim() || checkoutStage === "fulfilling"
-                : checkoutStage === "creating" || checkoutStage === "redirecting"
+                : checkoutStage === "creating" || checkoutStage === "opening"
             }
             className="inline-flex w-full items-center justify-center gap-2 rounded-[1.35rem] bg-[rgba(17,49,39,0.95)] px-4 py-3.5 text-sm font-semibold text-white shadow-[0_18px_40px_rgba(17,49,39,0.24)] transition hover:bg-[rgba(17,49,39,1)] disabled:cursor-not-allowed disabled:opacity-45"
           >
-            {checkoutStage === "creating" ||
-            checkoutStage === "redirecting" ||
-            checkoutStage === "fulfilling" ? (
+            {checkoutStage === "creating" || checkoutStage === "opening" || checkoutStage === "fulfilling" ? (
               <LoaderCircle className="h-4 w-4 animate-spin" />
             ) : showEmailStep ? (
               <Mail className="h-4 w-4" />
             ) : (
               <Download className="h-4 w-4" />
             )}
-            {showEmailStep ? "Email + download" : "Continue"}
+            {showEmailStep ? "Email + download" : "Continue to secure checkout"}
           </button>
         </div>
       </div>
@@ -743,6 +705,7 @@ export function PlotimgStudio() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const activePreviewRequest = useRef(0);
   const handledCheckoutRedirect = useRef(false);
+  const activeEmbeddedCheckout = useRef<{ close: () => void } | null>(null);
   const originalObjectUrlRef = useRef<string | null>(null);
 
   const [sessionId, setSessionId] = useState("");
@@ -757,12 +720,6 @@ export function PlotimgStudio() {
   const [generationState, setGenerationState] = useState<GenerationState>({
     status: "idle",
   });
-  const [couponCode, setCouponCode] = useState("");
-  const [couponState, setCouponState] = useState<CouponState>({
-    status: "idle",
-    free: false,
-    allowCheckoutDiscountCodes: true,
-  });
   const [checkoutStage, setCheckoutStage] = useState<CheckoutStage>("idle");
   const [checkoutNotice, setCheckoutNotice] = useState<string | null>(null);
   const [unlockContext, setUnlockContext] = useState<UnlockContext | null>(null);
@@ -772,7 +729,6 @@ export function PlotimgStudio() {
   const [starterBusyId, setStarterBusyId] = useState<string | null>(null);
   const [showSamples, setShowSamples] = useState(false);
   const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
-  const [downloadStatus, setDownloadStatus] = useState<"idle" | "downloading" | "error">("idle");
   const [downloadError, setDownloadError] = useState<string | null>(null);
 
   const deferredParams = useDeferredValue(params);
@@ -787,8 +743,7 @@ export function PlotimgStudio() {
   const activeLineCount = latestPreviewReady ? preview.estimatedLineCount : null;
   const complexityWarning =
     typeof activeLineCount === "number" ? getComplexityWarning(activeLineCount) : null;
-  const downloadDisabled =
-    !upload || !previewReady || pendingChanges || previewBusy || downloadStatus === "downloading";
+  const downloadDisabled = !upload || !previewReady || pendingChanges || previewBusy;
   const showDownloadCta = latestPreviewReady || !!downloadResult;
 
   const persistSnapshot = useEffectEvent((snapshot: EditorSnapshot) => {
@@ -809,11 +764,12 @@ export function PlotimgStudio() {
   });
 
   const clearUnlockProgress = useEffectEvent(() => {
+    activeEmbeddedCheckout.current?.close();
+    activeEmbeddedCheckout.current = null;
     setUnlockContext(null);
     setCheckoutStage("idle");
     setCheckoutNotice(null);
     setDownloadResult(null);
-    setDownloadStatus("idle");
     setDownloadError(null);
     setEmail("");
     setCheckoutModalOpen(false);
@@ -973,7 +929,6 @@ export function PlotimgStudio() {
         setRenderedParams(parsed.renderedParams ?? null);
         setPreviewBackground(parsed.previewBackground);
         setPreviewLine(parsed.previewLine);
-        setCouponCode(parsed.couponCode);
         setSelectedCurrency(parsed.selectedCurrency);
         if (parsed.originalImageSrc) {
           updateOriginalImageSource(parsed.originalImageSrc);
@@ -997,12 +952,10 @@ export function PlotimgStudio() {
       renderedParams,
       previewBackground,
       previewLine,
-      couponCode,
       selectedCurrency,
       originalImageSrc: originalImageSrc?.startsWith("blob:") ? null : originalImageSrc,
     });
   }, [
-    couponCode,
     originalImageSrc,
     params,
     persistSnapshot,
@@ -1013,6 +966,13 @@ export function PlotimgStudio() {
     sessionId,
     upload,
   ]);
+
+  useEffect(() => {
+    return () => {
+      activeEmbeddedCheckout.current?.close();
+      activeEmbeddedCheckout.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     if (!sessionId || handledCheckoutRedirect.current) {
@@ -1052,6 +1012,12 @@ export function PlotimgStudio() {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [checkoutModalOpen]);
+
+  const closeCheckoutModal = useEffectEvent(() => {
+    activeEmbeddedCheckout.current?.close();
+    activeEmbeddedCheckout.current = null;
+    setCheckoutModalOpen(false);
+  });
 
   function handleParameterChange<Key extends keyof PlotParameters>(
     key: Key,
@@ -1124,12 +1090,6 @@ export function PlotimgStudio() {
     }
 
     setUpload(nextUpload);
-    setCouponState({
-      status: "idle",
-      free: false,
-      allowCheckoutDiscountCodes: true,
-    });
-
     try {
       await beginPreviewGeneration(nextUpload.uploadId, params);
     } catch (error) {
@@ -1183,53 +1143,8 @@ export function PlotimgStudio() {
     }
   }
 
-  async function handleValidateCoupon() {
-    if (!sessionId || !couponCode.trim()) {
-      setCouponState({
-        status: "invalid",
-        free: false,
-        message: "Enter a code first.",
-        allowCheckoutDiscountCodes: true,
-      });
-      return;
-    }
-
-    setCouponState((current) => ({
-      ...current,
-      status: "checking",
-    }));
-
-    try {
-      const result = await validateCoupon(couponCode, sessionId);
-      setCouponState({
-        status: result.valid ? "valid" : "invalid",
-        free: result.free,
-        code: result.code,
-        message: result.message,
-        allowCheckoutDiscountCodes: result.allowCheckoutDiscountCodes,
-      });
-    } catch (error) {
-      setCouponState({
-        status: "invalid",
-        free: false,
-        message: error instanceof Error ? error.message : "Coupon check failed.",
-        allowCheckoutDiscountCodes: true,
-      });
-    }
-  }
-
   async function handleCheckoutStart() {
     if (!upload || !sessionId) {
-      return;
-    }
-
-    if (couponState.status === "valid" && couponState.free && couponState.code) {
-      setUnlockContext({
-        mode: "free",
-        couponCode: couponState.code,
-      });
-      setCheckoutStage("awaiting-email");
-      setCheckoutNotice("FREE applied.");
       return;
     }
 
@@ -1260,9 +1175,66 @@ export function PlotimgStudio() {
         return;
       }
 
-      setCheckoutStage("redirecting");
-      setCheckoutNotice("Redirecting…");
-      window.location.assign(response.checkoutUrl || "");
+      if (!response.checkoutId || !response.checkoutUrl) {
+        throw new Error("Secure checkout could not be created.");
+      }
+
+      const checkoutId = response.checkoutId;
+      const { PolarEmbedCheckout } = await import("@polar-sh/checkout/embed");
+      let checkoutSucceeded = false;
+
+      const checkout = await PolarEmbedCheckout.create(response.checkoutUrl, {
+        theme: "light",
+        onLoaded: () => {
+          setCheckoutStage("opening");
+          setCheckoutNotice(
+            "Secure checkout open. Enter any promo code there, then complete payment to unlock your SVG.",
+          );
+        },
+      });
+
+      activeEmbeddedCheckout.current = checkout;
+
+      checkout.addEventListener(
+        "confirmed",
+        () => {
+          setCheckoutNotice("Payment confirmed. Finalizing with Polar…");
+        },
+        { once: true },
+      );
+
+      checkout.addEventListener(
+        "success",
+        (event) => {
+          checkoutSucceeded = true;
+          event.preventDefault();
+          activeEmbeddedCheckout.current = null;
+          setUnlockContext({
+            mode: "paid",
+            purchaseId: response.purchaseId,
+            checkoutId,
+          });
+          setCheckoutStage("awaiting-email");
+          setCheckoutNotice("Payment confirmed. Add your email for instant delivery.");
+          checkout.close();
+        },
+        { once: true },
+      );
+
+      checkout.addEventListener(
+        "close",
+        () => {
+          if (activeEmbeddedCheckout.current === checkout) {
+            activeEmbeddedCheckout.current = null;
+          }
+
+          if (!checkoutSucceeded) {
+            setCheckoutStage("idle");
+            setCheckoutNotice("Checkout closed. Reopen it whenever you're ready.");
+          }
+        },
+        { once: true },
+      );
     } catch (error) {
       setCheckoutStage("error");
       setCheckoutNotice(error instanceof Error ? error.message : "Checkout failed.");
@@ -1302,32 +1274,6 @@ export function PlotimgStudio() {
     }
   }
 
-  async function handleDirectDownload() {
-    if (!upload || !sessionId) {
-      return;
-    }
-
-    setDownloadStatus("downloading");
-    setDownloadError(null);
-
-    try {
-      const response = await generateSvg({
-        uploadId: upload.uploadId,
-        params,
-        sessionId,
-        currency: "USD",
-        couponCode: "FREE",
-      });
-
-      setDownloadResult(response);
-      setDownloadStatus("idle");
-      triggerDownload(response.downloadUrl);
-    } catch (error) {
-      setDownloadStatus("error");
-      setDownloadError(error instanceof Error ? error.message : "Download failed.");
-    }
-  }
-
   return (
     <main className="mx-auto flex min-h-screen max-w-[1600px] flex-col px-4 pb-8 pt-4 sm:px-6 lg:px-8">
       <div className="grid items-start gap-5 lg:grid-cols-[19rem_minmax(0,1fr)]">
@@ -1338,6 +1284,7 @@ export function PlotimgStudio() {
           <div className="border-t border-[rgba(17,49,39,0.08)] px-5 pb-5 pt-5">
             <ControlRail
               upload={upload}
+              hasRenderedPreview={!!preview}
               params={params}
               previewBackground={previewBackground}
               previewLine={previewLine}
@@ -1361,6 +1308,7 @@ export function PlotimgStudio() {
           <div className="max-h-[calc(100vh-2.5rem)] overflow-y-auto px-5 py-5">
             <ControlRail
               upload={upload}
+              hasRenderedPreview={!!preview}
               params={params}
               previewBackground={previewBackground}
               previewLine={previewLine}
@@ -1438,11 +1386,13 @@ export function PlotimgStudio() {
             <button
               type="button"
               onClick={() => {
-                if (downloadResult && downloadStatus !== "downloading") {
+                if (downloadResult) {
                   triggerDownload(downloadResult.downloadUrl);
                   return;
                 }
-                void handleDirectDownload();
+                setCheckoutNotice(null);
+                setCheckoutStage(unlockContext ? "awaiting-email" : "idle");
+                setCheckoutModalOpen(true);
               }}
               disabled={downloadDisabled}
               className={clsx(
@@ -1451,11 +1401,7 @@ export function PlotimgStudio() {
                 downloadDisabled && "cursor-not-allowed opacity-45",
               )}
             >
-              {downloadStatus === "downloading" ? (
-                <LoaderCircle className="h-5 w-5 animate-spin" />
-              ) : (
-                <Download className="h-5 w-5" />
-              )}
+              <Download className="h-5 w-5" />
               Download SVG
             </button>
           </div>
@@ -1464,20 +1410,9 @@ export function PlotimgStudio() {
 
       <CheckoutModal
         open={checkoutModalOpen}
-        onClose={() => setCheckoutModalOpen(false)}
+        onClose={closeCheckoutModal}
         selectedCurrency={selectedCurrency}
         onCurrencyChange={setSelectedCurrency}
-        couponCode={couponCode}
-        onCouponCodeChange={(value) => {
-          setCouponCode(value);
-          setCouponState({
-            status: "idle",
-            free: false,
-            allowCheckoutDiscountCodes: true,
-          });
-        }}
-        couponState={couponState}
-        onValidateCoupon={() => void handleValidateCoupon()}
         checkoutStage={checkoutStage}
         checkoutNotice={checkoutNotice}
         email={email}

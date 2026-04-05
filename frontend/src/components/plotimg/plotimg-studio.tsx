@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import { useSearchParams } from "next/navigation";
 import {
   startTransition,
   useDeferredValue,
@@ -20,7 +19,6 @@ import {
   Plus,
   RefreshCcw,
   Sparkles,
-  TicketPercent,
   Upload,
   X,
 } from "lucide-react";
@@ -28,7 +26,6 @@ import {
 import { clsx } from "clsx";
 
 import {
-  createCheckout,
   createPreviewJob,
   generateSvg,
   getPreviewStatus,
@@ -40,7 +37,6 @@ import {
   DEFAULT_PREVIEW_LINE,
   estimateLineCount,
   getComplexityWarning,
-  PRICE_OPTIONS,
   SESSION_ID_STORAGE_KEY,
   SESSION_STORAGE_KEY,
   STARTER_IMAGES,
@@ -58,7 +54,7 @@ type GenerationState =
       message?: string;
     }
   | {
-      status: "uploading" | "generating" | "ready";
+      status: "uploading" | "generating" | "ready" | "fulfilling" | "completed";
       message: string;
     }
   | {
@@ -67,27 +63,12 @@ type GenerationState =
       error: string;
     };
 
-type UnlockContext =
-  | { mode: "free"; couponCode: string }
-  | { mode: "paid"; purchaseId: string; checkoutId: string }
-  | { mode: "existing"; purchaseId: string };
-
-type CheckoutStage =
-  | "idle"
-  | "creating"
-  | "opening"
-  | "awaiting-email"
-  | "fulfilling"
-  | "completed"
-  | "error";
-
 type EditorSnapshot = {
   upload: UploadRecord | null;
   params: PlotParameters;
   renderedParams: PlotParameters | null;
   previewBackground: string;
   previewLine: string;
-  selectedCurrency: "USD" | "ILS";
   originalImageSrc: string | null;
 };
 
@@ -558,36 +539,25 @@ function EmptyPrompt() {
 function CheckoutModal({
   open,
   onClose,
-  selectedCurrency,
-  onCurrencyChange,
-  checkoutStage,
-  checkoutNotice,
   email,
   onEmailChange,
-  onCheckoutStart,
   onFulfillment,
   downloadResult,
+  isBusy,
+  notice,
 }: {
   open: boolean;
   onClose: () => void;
-  selectedCurrency: "USD" | "ILS";
-  onCurrencyChange: (currency: "USD" | "ILS") => void;
-  checkoutStage: CheckoutStage;
-  checkoutNotice: string | null;
   email: string;
   onEmailChange: (value: string) => void;
-  onCheckoutStart: () => void;
   onFulfillment: () => void;
   downloadResult: GenerateSvgResponse | null;
+  isBusy: boolean;
+  notice: string | null;
 }) {
   if (!open) {
     return null;
   }
-
-  const showEmailStep =
-    checkoutStage === "awaiting-email" ||
-    checkoutStage === "fulfilling" ||
-    checkoutStage === "completed";
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-[rgba(10,23,19,0.34)] px-4 pb-4 pt-10 backdrop-blur-sm sm:items-center">
@@ -605,63 +575,33 @@ function CheckoutModal({
         </div>
 
         <div className="space-y-4 px-5 py-5">
-          <div className="grid grid-cols-2 gap-3">
-            {(Object.keys(PRICE_OPTIONS) as Array<keyof typeof PRICE_OPTIONS>).map((currency) => (
-              <button
-                key={currency}
-                type="button"
-                onClick={() => onCurrencyChange(currency)}
-                className={clsx(
-                  "rounded-[1.25rem] border px-4 py-3 text-left text-sm font-semibold transition",
-                  selectedCurrency === currency
-                    ? "border-[rgba(46,107,79,0.34)] bg-[rgba(90,162,127,0.12)] text-[rgba(17,49,39,0.92)]"
-                    : "border-[rgba(17,49,39,0.08)] bg-white text-[rgba(17,49,39,0.68)]",
-                )}
-              >
-                {PRICE_OPTIONS[currency].label}
-              </button>
-            ))}
+          <div className="rounded-[1.45rem] border border-[rgba(17,49,39,0.08)] bg-white/78 p-4">
+            <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[rgba(17,49,39,0.88)]">
+              <Mail className="h-4 w-4" />
+              Email
+            </div>
+            <input
+              type="email"
+              value={email}
+              onChange={(event) => onEmailChange(event.target.value)}
+              placeholder="you@example.com"
+              className="w-full rounded-[1rem] border border-[rgba(17,49,39,0.12)] bg-white px-4 py-3 text-sm text-[rgba(17,49,39,0.88)] outline-none transition focus:border-[rgba(46,107,79,0.45)]"
+            />
+            <p className="mt-3 text-sm leading-6 text-[rgba(17,49,39,0.72)]">
+              We&apos;ll email the download link and start the SVG download immediately.
+            </p>
           </div>
 
-          {!showEmailStep ? (
-            <div className="rounded-[1.45rem] border border-[rgba(17,49,39,0.08)] bg-white/78 p-4">
-              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[rgba(17,49,39,0.88)]">
-                <TicketPercent className="h-4 w-4" />
-                Discount Codes
-              </div>
-              <p className="text-sm leading-6 text-[rgba(17,49,39,0.72)]">
-                Enter any promo or launch code directly inside the secure Polar checkout overlay
-                after you continue.
-              </p>
-            </div>
-          ) : null}
-
-          {showEmailStep ? (
-            <div className="rounded-[1.45rem] border border-[rgba(17,49,39,0.08)] bg-white/78 p-4">
-              <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-[rgba(17,49,39,0.88)]">
-                <Mail className="h-4 w-4" />
-                Email
-              </div>
-              <input
-                type="email"
-                value={email}
-                onChange={(event) => onEmailChange(event.target.value)}
-                placeholder="you@example.com"
-                className="w-full rounded-[1rem] border border-[rgba(17,49,39,0.12)] bg-white px-4 py-3 text-sm text-[rgba(17,49,39,0.88)] outline-none transition focus:border-[rgba(46,107,79,0.45)]"
-              />
-            </div>
-          ) : null}
-
-          {checkoutNotice ? (
+          {notice ? (
             <div
               className={clsx(
                 "rounded-[1.25rem] px-4 py-3 text-sm",
-                checkoutStage === "error"
+                notice.toLowerCase().includes("failed") || notice.toLowerCase().includes("error")
                   ? "bg-[rgba(173,71,44,0.08)] text-[rgba(122,40,19,0.92)]"
                   : "bg-[rgba(17,49,39,0.05)] text-[rgba(17,49,39,0.72)]",
               )}
             >
-              {checkoutNotice}
+              {notice}
             </div>
           ) : null}
 
@@ -677,22 +617,16 @@ function CheckoutModal({
 
           <button
             type="button"
-            onClick={showEmailStep ? onFulfillment : onCheckoutStart}
-            disabled={
-              showEmailStep
-                ? !email.trim() || checkoutStage === "fulfilling"
-                : checkoutStage === "creating" || checkoutStage === "opening"
-            }
+            onClick={onFulfillment}
+            disabled={!email.trim() || isBusy}
             className="inline-flex w-full items-center justify-center gap-2 rounded-[1.35rem] bg-[rgba(17,49,39,0.95)] px-4 py-3.5 text-sm font-semibold text-white shadow-[0_18px_40px_rgba(17,49,39,0.24)] transition hover:bg-[rgba(17,49,39,1)] disabled:cursor-not-allowed disabled:opacity-45"
           >
-            {checkoutStage === "creating" || checkoutStage === "opening" || checkoutStage === "fulfilling" ? (
+            {isBusy ? (
               <LoaderCircle className="h-4 w-4 animate-spin" />
-            ) : showEmailStep ? (
-              <Mail className="h-4 w-4" />
             ) : (
-              <Download className="h-4 w-4" />
+              <Mail className="h-4 w-4" />
             )}
-            {showEmailStep ? "Email + download" : "Continue to secure checkout"}
+            Email + download
           </button>
         </div>
       </div>
@@ -701,11 +635,8 @@ function CheckoutModal({
 }
 
 export function PlotimgStudio() {
-  const searchParams = useSearchParams();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const activePreviewRequest = useRef(0);
-  const handledCheckoutRedirect = useRef(false);
-  const activeEmbeddedCheckout = useRef<{ close: () => void } | null>(null);
   const originalObjectUrlRef = useRef<string | null>(null);
 
   const [sessionId, setSessionId] = useState("");
@@ -720,10 +651,7 @@ export function PlotimgStudio() {
   const [generationState, setGenerationState] = useState<GenerationState>({
     status: "idle",
   });
-  const [checkoutStage, setCheckoutStage] = useState<CheckoutStage>("idle");
   const [checkoutNotice, setCheckoutNotice] = useState<string | null>(null);
-  const [unlockContext, setUnlockContext] = useState<UnlockContext | null>(null);
-  const [selectedCurrency, setSelectedCurrency] = useState<"USD" | "ILS">("USD");
   const [email, setEmail] = useState("");
   const [downloadResult, setDownloadResult] = useState<GenerateSvgResponse | null>(null);
   const [starterBusyId, setStarterBusyId] = useState<string | null>(null);
@@ -764,10 +692,6 @@ export function PlotimgStudio() {
   });
 
   const clearUnlockProgress = useEffectEvent(() => {
-    activeEmbeddedCheckout.current?.close();
-    activeEmbeddedCheckout.current = null;
-    setUnlockContext(null);
-    setCheckoutStage("idle");
     setCheckoutNotice(null);
     setDownloadResult(null);
     setDownloadError(null);
@@ -929,7 +853,6 @@ export function PlotimgStudio() {
         setRenderedParams(parsed.renderedParams ?? null);
         setPreviewBackground(parsed.previewBackground);
         setPreviewLine(parsed.previewLine);
-        setSelectedCurrency(parsed.selectedCurrency);
         if (parsed.originalImageSrc) {
           updateOriginalImageSource(parsed.originalImageSrc);
         }
@@ -952,7 +875,6 @@ export function PlotimgStudio() {
       renderedParams,
       previewBackground,
       previewLine,
-      selectedCurrency,
       originalImageSrc: originalImageSrc?.startsWith("blob:") ? null : originalImageSrc,
     });
   }, [
@@ -962,41 +884,9 @@ export function PlotimgStudio() {
     renderedParams,
     previewBackground,
     previewLine,
-    selectedCurrency,
     sessionId,
     upload,
   ]);
-
-  useEffect(() => {
-    return () => {
-      activeEmbeddedCheckout.current?.close();
-      activeEmbeddedCheckout.current = null;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!sessionId || handledCheckoutRedirect.current) {
-      return;
-    }
-
-    const purchaseId = searchParams.get("purchaseId");
-    const checkoutId = searchParams.get("checkout_id");
-
-    if (!purchaseId || !checkoutId) {
-      return;
-    }
-
-    handledCheckoutRedirect.current = true;
-    setUnlockContext({
-      mode: "paid",
-      purchaseId,
-      checkoutId,
-    });
-    setCheckoutStage("awaiting-email");
-    setCheckoutNotice("Payment confirmed.");
-    setCheckoutModalOpen(true);
-    window.history.replaceState({}, "", window.location.pathname);
-  }, [searchParams, sessionId]);
 
   useEffect(() => {
     if (!checkoutModalOpen) {
@@ -1014,8 +904,6 @@ export function PlotimgStudio() {
   }, [checkoutModalOpen]);
 
   const closeCheckoutModal = useEffectEvent(() => {
-    activeEmbeddedCheckout.current?.close();
-    activeEmbeddedCheckout.current = null;
     setCheckoutModalOpen(false);
   });
 
@@ -1143,110 +1031,15 @@ export function PlotimgStudio() {
     }
   }
 
-  async function handleCheckoutStart() {
-    if (!upload || !sessionId) {
-      return;
-    }
-
-    if (unlockContext?.mode === "paid" || unlockContext?.mode === "existing") {
-      setCheckoutStage("awaiting-email");
-      setCheckoutNotice("Add your email.");
-      return;
-    }
-
-    setCheckoutStage("creating");
-    setCheckoutNotice("Opening secure checkout…");
-
-    try {
-      const response = await createCheckout({
-        uploadId: upload.uploadId,
-        params,
-        currency: selectedCurrency,
-        sessionId,
-      });
-
-      if (response.mode === "existing") {
-        setUnlockContext({
-          mode: "existing",
-          purchaseId: response.purchaseId,
-        });
-        setCheckoutStage("awaiting-email");
-        setCheckoutNotice("Already unlocked in this session.");
-        return;
-      }
-
-      if (!response.checkoutId || !response.checkoutUrl) {
-        throw new Error("Secure checkout could not be created.");
-      }
-
-      const checkoutId = response.checkoutId;
-      const { PolarEmbedCheckout } = await import("@polar-sh/checkout/embed");
-      let checkoutSucceeded = false;
-
-      const checkout = await PolarEmbedCheckout.create(response.checkoutUrl, {
-        theme: "light",
-        onLoaded: () => {
-          setCheckoutStage("opening");
-          setCheckoutNotice(
-            "Secure checkout open. Enter any promo code there, then complete payment to unlock your SVG.",
-          );
-        },
-      });
-
-      activeEmbeddedCheckout.current = checkout;
-
-      checkout.addEventListener(
-        "confirmed",
-        () => {
-          setCheckoutNotice("Payment confirmed. Finalizing with Polar…");
-        },
-        { once: true },
-      );
-
-      checkout.addEventListener(
-        "success",
-        (event) => {
-          checkoutSucceeded = true;
-          event.preventDefault();
-          activeEmbeddedCheckout.current = null;
-          setUnlockContext({
-            mode: "paid",
-            purchaseId: response.purchaseId,
-            checkoutId,
-          });
-          setCheckoutStage("awaiting-email");
-          setCheckoutNotice("Payment confirmed. Add your email for instant delivery.");
-          checkout.close();
-        },
-        { once: true },
-      );
-
-      checkout.addEventListener(
-        "close",
-        () => {
-          if (activeEmbeddedCheckout.current === checkout) {
-            activeEmbeddedCheckout.current = null;
-          }
-
-          if (!checkoutSucceeded) {
-            setCheckoutStage("idle");
-            setCheckoutNotice("Checkout closed. Reopen it whenever you're ready.");
-          }
-        },
-        { once: true },
-      );
-    } catch (error) {
-      setCheckoutStage("error");
-      setCheckoutNotice(error instanceof Error ? error.message : "Checkout failed.");
-    }
-  }
-
   async function handleFulfillment() {
     if (!upload || !sessionId || !email.trim()) {
       return;
     }
 
-    setCheckoutStage("fulfilling");
+    setGenerationState({
+      status: "fulfilling",
+      message: "Preparing your download…",
+    });
     setCheckoutNotice("Preparing your download…");
 
     try {
@@ -1254,22 +1047,24 @@ export function PlotimgStudio() {
         uploadId: upload.uploadId,
         params,
         sessionId,
-        currency: selectedCurrency,
-        couponCode: unlockContext?.mode === "free" ? unlockContext.couponCode : undefined,
-        purchaseId:
-          unlockContext?.mode === "paid" || unlockContext?.mode === "existing"
-            ? unlockContext.purchaseId
-            : undefined,
-        checkoutId: unlockContext?.mode === "paid" ? unlockContext.checkoutId : undefined,
+        currency: "USD",
+        couponCode: "FREE",
         email,
       });
 
       setDownloadResult(response);
-      setCheckoutStage("completed");
+      setGenerationState({
+        status: "completed",
+        message: "Ready",
+      });
       setCheckoutNotice(response.emailDelivered ? "Email sent." : response.emailReason || "Ready.");
       triggerDownload(response.downloadUrl);
     } catch (error) {
-      setCheckoutStage("error");
+      setGenerationState({
+        status: "error",
+        message: "Download failed",
+        error: error instanceof Error ? error.message : "Download failed.",
+      });
       setCheckoutNotice(error instanceof Error ? error.message : "Download failed.");
     }
   }
@@ -1390,8 +1185,7 @@ export function PlotimgStudio() {
                   triggerDownload(downloadResult.downloadUrl);
                   return;
                 }
-                setCheckoutNotice(null);
-                setCheckoutStage(unlockContext ? "awaiting-email" : "idle");
+                setCheckoutNotice("Add your email for instant delivery.");
                 setCheckoutModalOpen(true);
               }}
               disabled={downloadDisabled}
@@ -1411,15 +1205,12 @@ export function PlotimgStudio() {
       <CheckoutModal
         open={checkoutModalOpen}
         onClose={closeCheckoutModal}
-        selectedCurrency={selectedCurrency}
-        onCurrencyChange={setSelectedCurrency}
-        checkoutStage={checkoutStage}
-        checkoutNotice={checkoutNotice}
         email={email}
         onEmailChange={setEmail}
-        onCheckoutStart={() => void handleCheckoutStart()}
         onFulfillment={() => void handleFulfillment()}
         downloadResult={downloadResult}
+        isBusy={generationState.status === "fulfilling"}
+        notice={checkoutNotice}
       />
 
       <input

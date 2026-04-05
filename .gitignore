@@ -1,0 +1,16 @@
+node_modules
+.pnpm-store
+.DS_Store
+.next
+dist
+coverage
+storage
+*.tsbuildinfo
+frontend/.env
+frontend/.env.local
+frontend/.env.production
+backend/.env
+backend/.env.local
+backend/.env.production
+.vercel
+.railway

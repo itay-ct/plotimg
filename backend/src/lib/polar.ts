@@ -3,7 +3,8 @@ import { Polar } from "@polar-sh/sdk";
 import { config } from "../config.js";
 
 const polar =
-  config.POLAR_ACCESS_TOKEN && (config.POLAR_PRODUCT_ID_USD || config.POLAR_PRODUCT_ID_ILS)
+  config.POLAR_ACCESS_TOKEN &&
+  (config.POLAR_PRODUCT_ID || config.POLAR_PRODUCT_ID_USD || config.POLAR_PRODUCT_ID_ILS)
     ? new Polar({
         accessToken: config.POLAR_ACCESS_TOKEN,
         server: config.POLAR_SERVER,
@@ -12,10 +13,10 @@ const polar =
 
 function getProductIdForCurrency(currency: "USD" | "ILS"): string | null {
   if (currency === "USD") {
-    return config.POLAR_PRODUCT_ID_USD ?? null;
+    return config.POLAR_PRODUCT_ID_USD ?? config.POLAR_PRODUCT_ID ?? null;
   }
 
-  return config.POLAR_PRODUCT_ID_ILS ?? null;
+  return config.POLAR_PRODUCT_ID_ILS ?? config.POLAR_PRODUCT_ID ?? null;
 }
 
 function getPresentmentCurrency(currency: "USD" | "ILS"): "usd" | "ils" {
@@ -28,6 +29,7 @@ export async function createCheckoutSession(input: {
   renderFingerprint: string;
   sessionId: string;
   currency: "USD" | "ILS";
+  appOrigin: string;
   customerEmail?: string;
 }): Promise<{ checkoutId: string; checkoutUrl: string }> {
   if (!polar) {
@@ -44,6 +46,7 @@ export async function createCheckoutSession(input: {
     allowDiscountCodes: config.POLAR_ALLOW_DISCOUNT_CODES,
     currency: getPresentmentCurrency(input.currency),
     customerEmail: input.customerEmail,
+    embedOrigin: input.appOrigin,
     externalCustomerId: input.sessionId,
     metadata: {
       artifactId: input.artifactId,
@@ -52,7 +55,8 @@ export async function createCheckoutSession(input: {
       sessionId: input.sessionId,
     },
     products: [productId],
-    successUrl: `${config.PUBLIC_APP_URL}/?purchaseId=${input.purchaseId}&artifactId=${input.artifactId}&checkout_id={CHECKOUT_ID}`,
+    returnUrl: input.appOrigin,
+    successUrl: `${input.appOrigin}/?purchaseId=${input.purchaseId}&artifactId=${input.artifactId}&checkout_id={CHECKOUT_ID}`,
   });
 
   return {

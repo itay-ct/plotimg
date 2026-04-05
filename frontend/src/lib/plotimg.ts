@@ -84,7 +84,7 @@ export const PRICE_OPTIONS = {
     helper: "Best for international buyers",
   },
   ILS: {
-    label: "₪10 ILS",
+    label: "₪19.90 ILS",
     helper: "Fast local checkout",
   },
 } as const;

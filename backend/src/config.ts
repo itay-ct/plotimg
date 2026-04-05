@@ -18,6 +18,7 @@ const envSchema = z.object({
   MAX_PREVIEW_JOBS_PER_MINUTE: z.coerce.number().int().positive().default(24),
   POLAR_ACCESS_TOKEN: z.string().optional(),
   POLAR_SERVER: z.enum(["sandbox", "production"]).default("sandbox"),
+  POLAR_PRODUCT_ID: z.string().optional(),
   POLAR_PRODUCT_ID_USD: z.string().optional(),
   POLAR_PRODUCT_ID_ILS: z.string().optional(),
   POLAR_WEBHOOK_SECRET: z.string().optional(),
@@ -37,7 +38,7 @@ const envSchema = z.object({
   DOWNLOAD_TOKEN_SECRET: z.string().min(8).default("change-me"),
   COUPON_CODE_CONFIG_JSON: z
     .string()
-    .default('{"FREE":{"kind":"free","label":"Free checkout"}}'),
+    .default("{}"),
 });
 
 function parseCouponConfig(rawValue: string): Record<string, CouponConfig> {

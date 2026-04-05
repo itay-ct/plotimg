@@ -83,6 +83,51 @@ type UnlockContext =
 
 type CheckoutStage = "idle" | "creating" | "opening" | "awaiting-email";
 type CheckoutCurrency = keyof typeof PRICE_OPTIONS;
+type PolarCheckoutLoadedDetail = { event: "loaded" };
+type PolarCheckoutCloseDetail = { event: "close" };
+type PolarCheckoutConfirmedDetail = { event: "confirmed" };
+type PolarCheckoutSuccessDetail = {
+  event: "success";
+  successURL: string;
+  redirect: boolean;
+};
+type PolarEmbedCheckoutInstance = {
+  close(): void;
+  addEventListener(
+    type: "confirmed",
+    listener: (event: CustomEvent<PolarCheckoutConfirmedDetail>) => void,
+    options?: AddEventListenerOptions | boolean,
+  ): void;
+  addEventListener(
+    type: "success",
+    listener: (event: CustomEvent<PolarCheckoutSuccessDetail>) => void,
+    options?: AddEventListenerOptions | boolean,
+  ): void;
+  addEventListener(
+    type: "close",
+    listener: (event: CustomEvent<PolarCheckoutCloseDetail>) => void,
+    options?: AddEventListenerOptions | boolean,
+  ): void;
+};
+type PolarEmbedCheckoutStatic = {
+  create(
+    url: string,
+    options?: {
+      theme?: "light" | "dark";
+      onLoaded?: (event: CustomEvent<PolarCheckoutLoadedDetail>) => void;
+    },
+  ): Promise<PolarEmbedCheckoutInstance>;
+};
+
+declare global {
+  interface Window {
+    Polar?: {
+      EmbedCheckout?: PolarEmbedCheckoutStatic;
+    };
+  }
+}
+
+let polarEmbedCheckoutLoader: Promise<PolarEmbedCheckoutStatic> | null = null;
 
 const TOOLTIPS = {
   processingHeight: "More rows = more vertical detail.",
@@ -104,6 +149,74 @@ function stepValue(value: number, step: number, direction: -1 | 1, min: number, 
   const precision = step.toString().split(".")[1]?.length ?? 0;
   const nextValue = value + step * direction;
   return clamp(Number(nextValue.toFixed(precision)), min, max);
+}
+
+async function loadPolarEmbedCheckout() {
+  if (typeof window === "undefined") {
+    throw new Error("Polar checkout is only available in the browser.");
+  }
+
+  const existingEmbedCheckout = window.Polar?.EmbedCheckout;
+
+  if (existingEmbedCheckout) {
+    return existingEmbedCheckout;
+  }
+
+  if (polarEmbedCheckoutLoader) {
+    return polarEmbedCheckoutLoader;
+  }
+
+  polarEmbedCheckoutLoader = new Promise<PolarEmbedCheckoutStatic>((resolve, reject) => {
+    const existingScript = document.querySelector<HTMLScriptElement>(
+      'script[data-plotimg-polar-embed="true"]',
+    );
+
+    const finishResolve = () => {
+      const embedCheckout = window.Polar?.EmbedCheckout;
+
+      if (!embedCheckout) {
+        polarEmbedCheckoutLoader = null;
+        reject(new Error("Polar checkout failed to initialize."));
+        return;
+      }
+
+      resolve(embedCheckout);
+    };
+
+    const handleError = () => {
+      polarEmbedCheckoutLoader = null;
+      reject(new Error("Polar checkout could not be loaded."));
+    };
+
+    if (existingScript) {
+      if (existingScript.dataset.loaded === "true") {
+        finishResolve();
+        return;
+      }
+
+      existingScript.addEventListener("load", finishResolve, { once: true });
+      existingScript.addEventListener("error", handleError, { once: true });
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = "https://cdn.jsdelivr.net/npm/@polar-sh/checkout@0.2.0/dist/embed.global.js";
+    script.async = true;
+    script.defer = true;
+    script.dataset.plotimgPolarEmbed = "true";
+    script.addEventListener(
+      "load",
+      () => {
+        script.dataset.loaded = "true";
+        finishResolve();
+      },
+      { once: true },
+    );
+    script.addEventListener("error", handleError, { once: true });
+    document.head.appendChild(script);
+  });
+
+  return polarEmbedCheckoutLoader;
 }
 
 function InfoTooltip({
@@ -1255,7 +1368,7 @@ export function PlotimgStudio() {
       }
 
       const checkoutId = response.checkoutId;
-      const { PolarEmbedCheckout } = await import("@polar-sh/checkout/embed");
+      const PolarEmbedCheckout = await loadPolarEmbedCheckout();
       let checkoutSucceeded = false;
 
       const checkout = await PolarEmbedCheckout.create(response.checkoutUrl, {

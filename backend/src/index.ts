@@ -114,6 +114,37 @@ function getSessionId(request: { headers: Record<string, unknown> }) {
   return headerValue.trim();
 }
 
+function isAllowedFrontendOrigin(origin: string) {
+  return (
+    config.allowedFrontendOrigins.includes(origin) ||
+    (config.frontendOriginRegex?.test(origin) ?? false)
+  );
+}
+
+function resolveFrontendAppOrigin(request: { headers: Record<string, unknown> }) {
+  const originHeader = request.headers.origin;
+
+  if (typeof originHeader === "string" && isAllowedFrontendOrigin(originHeader)) {
+    return originHeader;
+  }
+
+  const refererHeader = request.headers.referer;
+
+  if (typeof refererHeader === "string") {
+    try {
+      const refererUrl = new URL(refererHeader);
+
+      if (isAllowedFrontendOrigin(refererUrl.origin)) {
+        return refererUrl.origin;
+      }
+    } catch {
+      // Ignore malformed referers and fall back to the canonical app URL.
+    }
+  }
+
+  return config.PUBLIC_APP_URL;
+}
+
 function getUploadForSession(uploadId: string, sessionId: string): StoredUpload {
   const upload = database.getUpload(uploadId);
 
@@ -484,6 +515,7 @@ server.post("/validate-coupon", async (request, reply) => {
 
 server.post("/checkout", async (request, reply) => {
   const sessionId = getSessionId(request);
+  const appOrigin = resolveFrontendAppOrigin(request);
   const body = checkoutBodySchema.parse(request.body);
   const plotParameters = normalizePlotParameters(body.params);
   const { artifact, renderFingerprint } = await ensureArtifact({
@@ -522,6 +554,7 @@ server.post("/checkout", async (request, reply) => {
 
   const checkout = await createCheckoutSession({
     artifactId: artifact.id,
+    appOrigin,
     purchaseId,
     renderFingerprint,
     sessionId,

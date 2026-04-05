@@ -51,6 +51,7 @@ Plotimg is a split frontend/backend web app for turning uploaded portraits into 
 - `DOWNLOAD_TOKEN_SECRET`
 - `POLAR_ACCESS_TOKEN`
 - `POLAR_SERVER`
+- `POLAR_PRODUCT_ID` or currency-specific product IDs below
 - `POLAR_PRODUCT_ID_USD`
 - `POLAR_PRODUCT_ID_ILS`
 - `POLAR_WEBHOOK_SECRET`
@@ -79,22 +80,17 @@ Plotimg is a split frontend/backend web app for turning uploaded portraits into 
 - Set the exact production frontend URL in `FRONTEND_ORIGIN`.
 - Add `FRONTEND_ORIGIN_REGEX` for Vercel preview deploys, for example `^https://plotimg-.*\\.vercel\\.app$`.
 - Set the public URLs, Polar credentials, SMTP credentials, and webhook secret.
+- If one Polar product contains both USD and ILS prices, you can set `POLAR_PRODUCT_ID` once instead of separate product IDs.
 - Configure the Polar webhook to hit:
 
   ```text
   https://your-railway-app.example.com/webhooks/polar
   ```
 
+- Subscribe the webhook to at least `checkout.updated` and `order.paid`, then copy the generated signing secret into `POLAR_WEBHOOK_SECRET`.
+
 ## Verification
 
 - `pnpm --filter @plotimg/backend lint`
 - `pnpm --filter @plotimg/frontend lint`
 - `pnpm build`
-
-The backend was also smoke-tested locally through the FREE coupon flow:
-
-- upload sample portrait
-- queue preview job
-- poll completed preview
-- generate final SVG through coupon bypass
-- fetch the signed download URL successfully

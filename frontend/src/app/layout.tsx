@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Caveat, Fraunces, Manrope } from "next/font/google";
 
 import "./globals.css";
@@ -21,6 +21,14 @@ const caveat = Caveat({
 export const metadata: Metadata = {
   title: "Plotimg",
   description: "Turn portraits into plotter-friendly SVG wave art with a familiar consumer crafting workflow.",
+  icons: {
+    icon: "/favicon.svg",
+    shortcut: "/favicon.svg",
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#000000",
 };
 
 export default function RootLayout({

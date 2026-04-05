@@ -42,6 +42,15 @@ export type GenerateSvgResponse = {
   emailReason?: string;
 };
 
+export type CheckoutPriceMap = {
+  USD: {
+    label: string;
+  };
+  ILS: {
+    label: string;
+  };
+};
+
 export const DEFAULT_PARAMETERS: PlotParameters = {
   processingHeight: 125,
   pixelWidth: 6,
@@ -78,14 +87,14 @@ export const STARTER_IMAGES = [
   },
 ] as const;
 
-export const PRICE_OPTIONS = {
+export const PRICE_OPTIONS: CheckoutPriceMap = {
   USD: {
-    label: "$3.99 USD",
+    label: "$9.90 USD",
   },
   ILS: {
-    label: "₪19.90 ILS",
+    label: "₪10.00 ILS",
   },
-} as const;
+};
 
 export function estimateLineCount(
   params: PlotParameters,

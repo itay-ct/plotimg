@@ -31,10 +31,12 @@ import {
   createCheckout,
   createPreviewJob,
   generateSvg,
+  getCheckoutConfig,
   getPreviewStatus,
   uploadImage,
 } from "@/lib/api";
 import {
+  type CheckoutPriceMap,
   DEFAULT_PARAMETERS,
   DEFAULT_PREVIEW_BACKGROUND,
   DEFAULT_PREVIEW_LINE,
@@ -754,6 +756,7 @@ function CheckoutModal({
   onCheckoutStart,
   checkoutCurrency,
   onCheckoutCurrencyChange,
+  checkoutPrices,
   email,
   onEmailChange,
   onFulfillment,
@@ -766,6 +769,7 @@ function CheckoutModal({
   onCheckoutStart: () => void;
   checkoutCurrency: CheckoutCurrency;
   onCheckoutCurrencyChange: (currency: CheckoutCurrency) => void;
+  checkoutPrices: CheckoutPriceMap;
   email: string;
   onEmailChange: (value: string) => void;
   onFulfillment: () => void;
@@ -825,11 +829,8 @@ function CheckoutModal({
                 </div>
               </div>
               <div className="text-2xl font-semibold text-[rgba(17,49,39,0.92)]">
-                {PRICE_OPTIONS[checkoutCurrency].label}
+                {checkoutPrices[checkoutCurrency].label}
               </div>
-              <p className="mt-3 text-sm leading-6 text-[rgba(17,49,39,0.72)]">
-                Complete checkout in the secure Polar overlay without leaving the page.
-              </p>
             </div>
           ) : null}
 
@@ -901,6 +902,9 @@ export function PlotimgStudio() {
   const activePreviewRequest = useRef(0);
   const activeEmbeddedCheckout = useRef<{ close: () => void } | null>(null);
   const originalObjectUrlRef = useRef<string | null>(null);
+  const processedPurchaseReturnRef = useRef<string | null>(null);
+  const restoredPreviewKeyRef = useRef<string | null>(null);
+  const purchaseNoticeTimeoutRef = useRef<number | null>(null);
 
   const [sessionId, setSessionId] = useState("");
   const [upload, setUpload] = useState<UploadRecord | null>(null);
@@ -915,6 +919,7 @@ export function PlotimgStudio() {
     status: "idle",
   });
   const [checkoutCurrency, setCheckoutCurrency] = useState<CheckoutCurrency>("USD");
+  const [checkoutPrices, setCheckoutPrices] = useState<CheckoutPriceMap>(PRICE_OPTIONS);
   const [checkoutStage, setCheckoutStage] = useState<CheckoutStage>("idle");
   const [checkoutNotice, setCheckoutNotice] = useState<string | null>(null);
   const [unlockContext, setUnlockContext] = useState<UnlockContext | null>(null);
@@ -924,6 +929,7 @@ export function PlotimgStudio() {
   const [showSamples, setShowSamples] = useState(false);
   const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [purchaseNotice, setPurchaseNotice] = useState<string | null>(null);
 
   const deferredParams = useDeferredValue(params);
   const estimatedLines = estimateLineCount(
@@ -937,7 +943,7 @@ export function PlotimgStudio() {
   const activeLineCount = latestPreviewReady ? preview.estimatedLineCount : null;
   const complexityWarning =
     typeof activeLineCount === "number" ? getComplexityWarning(activeLineCount) : null;
-  const downloadDisabled = !upload || !previewReady || pendingChanges || previewBusy;
+  const downloadDisabled = !downloadResult && (!upload || !previewReady || pendingChanges || previewBusy);
   const showDownloadCta = latestPreviewReady || !!downloadResult;
 
   useEffect(() => {
@@ -966,6 +972,31 @@ export function PlotimgStudio() {
     }
   });
 
+  const showTimedPurchaseNotice = useEffectEvent((message: string) => {
+    if (purchaseNoticeTimeoutRef.current) {
+      window.clearTimeout(purchaseNoticeTimeoutRef.current);
+    }
+
+    setPurchaseNotice(message);
+    purchaseNoticeTimeoutRef.current = window.setTimeout(() => {
+      setPurchaseNotice((current) => (current === message ? null : current));
+      purchaseNoticeTimeoutRef.current = null;
+    }, 5000);
+  });
+
+  const refreshCheckoutPrices = useEffectEvent(async () => {
+    if (!sessionId) {
+      return;
+    }
+
+    try {
+      const response = await getCheckoutConfig(sessionId);
+      setCheckoutPrices(response.prices);
+    } catch {
+      // Keep the existing fallback labels if live checkout pricing is unavailable.
+    }
+  });
+
   const clearUnlockProgress = useEffectEvent(() => {
     activeEmbeddedCheckout.current?.close();
     activeEmbeddedCheckout.current = null;
@@ -974,6 +1005,7 @@ export function PlotimgStudio() {
     setUnlockContext(null);
     setDownloadResult(null);
     setDownloadError(null);
+    setPurchaseNotice(null);
     setEmail("");
     setCheckoutModalOpen(false);
   });
@@ -1112,6 +1144,9 @@ export function PlotimgStudio() {
     return () => {
       activeEmbeddedCheckout.current?.close();
       activeEmbeddedCheckout.current = null;
+      if (purchaseNoticeTimeoutRef.current) {
+        window.clearTimeout(purchaseNoticeTimeoutRef.current);
+      }
       if (originalObjectUrlRef.current) {
         URL.revokeObjectURL(originalObjectUrlRef.current);
       }
@@ -1170,9 +1205,82 @@ export function PlotimgStudio() {
   ]);
 
   useEffect(() => {
+    if (!sessionId || !upload || !renderedParams || preview) {
+      return;
+    }
+
+    const restoreKey = `${upload.uploadId}:${JSON.stringify(renderedParams)}`;
+    if (restoredPreviewKeyRef.current === restoreKey) {
+      return;
+    }
+
+    restoredPreviewKeyRef.current = restoreKey;
+
+    void beginPreviewGeneration(upload.uploadId, renderedParams).catch((error) => {
+      setGenerationState({
+        status: "error",
+        message: "Preview failed",
+        error: error instanceof Error ? error.message : "Preview generation failed.",
+      });
+    });
+  }, [beginPreviewGeneration, preview, renderedParams, sessionId, upload]);
+
+  useEffect(() => {
+    if (!sessionId || typeof window === "undefined") {
+      return;
+    }
+
+    const url = new URL(window.location.href);
+    const purchaseId = url.searchParams.get("purchaseId");
+    const checkoutId = url.searchParams.get("checkout_id");
+
+    if (!purchaseId || !checkoutId) {
+      return;
+    }
+
+    const purchaseKey = `${purchaseId}:${checkoutId}`;
+    if (processedPurchaseReturnRef.current === purchaseKey) {
+      return;
+    }
+
+    processedPurchaseReturnRef.current = purchaseKey;
+    window.history.replaceState({}, "", `${window.location.pathname}${window.location.hash}`);
+    activeEmbeddedCheckout.current?.close();
+    activeEmbeddedCheckout.current = null;
+    setCheckoutModalOpen(false);
+    setCheckoutStage("idle");
+    setCheckoutNotice(null);
+    setDownloadError(null);
+    showTimedPurchaseNotice("Thanks for your purchase, downloading...");
+
+    void generateSvg({
+      sessionId,
+      purchaseId,
+      checkoutId,
+      currency: checkoutCurrency,
+    })
+      .then((response) => {
+        setDownloadResult(response);
+        setUnlockContext({
+          mode: "existing",
+          purchaseId: response.purchaseId,
+        });
+        triggerDownload(response.downloadUrl);
+      })
+      .catch((error) => {
+        setPurchaseNotice(null);
+        setDownloadError(
+          error instanceof Error ? error.message : "Your download could not be completed.",
+        );
+      });
+  }, [checkoutCurrency, sessionId, showTimedPurchaseNotice, triggerDownload]);
+
+  useEffect(() => {
     if (!checkoutModalOpen) {
       return;
     }
+
+    void refreshCheckoutPrices();
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -1184,7 +1292,15 @@ export function PlotimgStudio() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [checkoutModalOpen]);
+  }, [checkoutModalOpen, refreshCheckoutPrices]);
+
+  useEffect(() => {
+    if (!sessionId) {
+      return;
+    }
+
+    void refreshCheckoutPrices();
+  }, [refreshCheckoutPrices, sessionId]);
 
   const closeCheckoutModal = useEffectEvent(() => {
     activeEmbeddedCheckout.current?.close();
@@ -1512,6 +1628,8 @@ export function PlotimgStudio() {
           ) : null}
 
           <div className="space-y-3">
+            {purchaseNotice ? <NoticeBanner message={purchaseNotice} /> : null}
+
             {complexityWarning ? (
               <NoticeBanner
                 tone={complexityWarning.tone === "high" ? "danger" : "warning"}
@@ -1601,6 +1719,7 @@ export function PlotimgStudio() {
         onCheckoutStart={() => void handleCheckoutStart()}
         checkoutCurrency={checkoutCurrency}
         onCheckoutCurrencyChange={setCheckoutCurrency}
+        checkoutPrices={checkoutPrices}
         email={email}
         onEmailChange={setEmail}
         onFulfillment={() => void handleFulfillment()}

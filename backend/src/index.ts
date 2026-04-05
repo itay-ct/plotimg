@@ -20,7 +20,12 @@ import {
   readImageMetadata,
 } from "./lib/image-processing.js";
 import { isPreviewJobActive, queuePreviewJob } from "./lib/jobs.js";
-import { createCheckoutSession, getCheckoutSession, verifyWebhook } from "./lib/polar.js";
+import {
+  createCheckoutSession,
+  getCheckoutDisplayPrices,
+  getCheckoutSession,
+  verifyWebhook,
+} from "./lib/polar.js";
 import { readUploadFile, saveArtifactSvg, saveUploadFile, sha256 } from "./lib/storage.js";
 import { signToken, verifyToken } from "./lib/tokens.js";
 import type { PlotParameters, PreviewPayload, PurchaseRecord, StoredUpload } from "./types.js";
@@ -89,13 +94,23 @@ const checkoutBodySchema = z.object({
 });
 
 const generateBodySchema = z.object({
-  uploadId: z.string().min(8),
-  params: z.unknown(),
+  uploadId: z.string().min(8).optional(),
+  params: z.unknown().optional(),
   couponCode: z.string().trim().max(64).optional(),
   email: z.string().trim().email().optional(),
   purchaseId: z.string().trim().optional(),
   checkoutId: z.string().trim().optional(),
   currency: z.enum(["USD", "ILS"]).default("USD"),
+}).superRefine((value, ctx) => {
+  const hasRenderContext = !!value.uploadId && value.params !== undefined;
+  const hasCheckoutReturn = !!value.purchaseId && !!value.checkoutId;
+
+  if (!hasRenderContext && !hasCheckoutReturn) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Provide either the render context or the completed checkout details.",
+    });
+  }
 });
 
 type DownloadTokenPayload = {
@@ -222,15 +237,89 @@ async function ensureArtifact(params: {
   };
 }
 
+async function confirmPaidPurchase(input: {
+  sessionId: string;
+  purchaseId: string;
+  checkoutId: string;
+  expectedArtifactId?: string;
+}) {
+  const purchase = database.getPurchase(input.purchaseId);
+
+  if (!purchase || purchase.sessionId !== input.sessionId) {
+    throw new Error("Purchase could not be found for this session.");
+  }
+
+  if (input.expectedArtifactId && purchase.artifactId !== input.expectedArtifactId) {
+    throw new Error("Purchase does not match this artwork.");
+  }
+
+  if (purchase.checkoutId && purchase.checkoutId !== input.checkoutId) {
+    throw new Error("Purchase does not match this checkout.");
+  }
+
+  const artifact = database.getArtifact(purchase.artifactId);
+
+  if (!artifact) {
+    throw new Error("The purchased artwork could not be found.");
+  }
+
+  const checkout = await getCheckoutSession(input.checkoutId);
+  const checkoutPurchaseId =
+    checkout.metadata && typeof checkout.metadata.purchaseId === "string"
+      ? checkout.metadata.purchaseId
+      : null;
+
+  if (checkoutPurchaseId && checkoutPurchaseId !== purchase.id) {
+    throw new Error("Checkout does not match this purchase.");
+  }
+
+  if (checkout.status !== "succeeded") {
+    throw new Error("Payment has not been confirmed yet.");
+  }
+
+  database.updatePurchase(purchase.id, {
+    status: "paid",
+    checkoutId: checkout.id,
+    checkoutUrl: checkout.url,
+    fulfilledAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+
+  const paidPurchase = database.getPurchase(purchase.id);
+
+  if (!paidPurchase) {
+    throw new Error("Purchase was not found after confirmation.");
+  }
+
+  return {
+    artifact,
+    purchase: paidPurchase,
+  };
+}
+
 async function authorizePurchase(input: {
   sessionId: string;
-  uploadId: string;
-  plotParameters: PlotParameters;
+  uploadId?: string;
+  plotParameters?: PlotParameters;
   couponCode?: string;
   purchaseId?: string;
   checkoutId?: string;
   currency: "USD" | "ILS";
 }) {
+  if (input.purchaseId && input.checkoutId && !input.uploadId && !input.plotParameters) {
+    const { artifact, purchase } = await confirmPaidPurchase({
+      sessionId: input.sessionId,
+      purchaseId: input.purchaseId,
+      checkoutId: input.checkoutId,
+    });
+
+    return { artifact, purchase, mode: "paid" as const };
+  }
+
+  if (!input.uploadId || !input.plotParameters) {
+    throw new Error("This artwork could not be restored. Please reopen the preview and try again.");
+  }
+
   const { artifact, renderFingerprint } = await ensureArtifact({
     sessionId: input.sessionId,
     uploadId: input.uploadId,
@@ -266,28 +355,12 @@ async function authorizePurchase(input: {
   }
 
   if (input.purchaseId && input.checkoutId) {
-    const purchase = database.getPurchase(input.purchaseId);
-    if (!purchase || purchase.sessionId !== input.sessionId || purchase.artifactId !== artifact.id) {
-      throw new Error("Purchase does not match this session.");
-    }
-
-    const checkout = await getCheckoutSession(input.checkoutId);
-    if (checkout.status !== "succeeded") {
-      throw new Error("Payment has not been confirmed yet.");
-    }
-
-    database.updatePurchase(purchase.id, {
-      status: "paid",
-      checkoutId: checkout.id,
-      checkoutUrl: checkout.url,
-      fulfilledAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+    const { purchase: paidPurchase } = await confirmPaidPurchase({
+      sessionId: input.sessionId,
+      purchaseId: input.purchaseId,
+      checkoutId: input.checkoutId,
+      expectedArtifactId: artifact.id,
     });
-
-    const paidPurchase = database.getPurchase(purchase.id);
-    if (!paidPurchase) {
-      throw new Error("Purchase was not found after confirmation.");
-    }
 
     return { artifact, purchase: paidPurchase, mode: "paid" as const };
   }
@@ -299,6 +372,22 @@ server.get("/health", async () => ({
   ok: true,
   environment: config.NODE_ENV,
 }));
+
+server.get("/checkout-config", async () => {
+  const prices = await getCheckoutDisplayPrices();
+
+  return {
+    allowCheckoutDiscountCodes: config.POLAR_ALLOW_DISCOUNT_CODES,
+    prices: {
+      USD: {
+        label: prices.USD.label ?? "$9.90 USD",
+      },
+      ILS: {
+        label: prices.ILS.label ?? "₪10.00 ILS",
+      },
+    },
+  };
+});
 
 server.post(
   "/upload",
@@ -581,7 +670,7 @@ server.post("/checkout", async (request, reply) => {
 server.post("/generate-svg", async (request, reply) => {
   const sessionId = getSessionId(request);
   const body = generateBodySchema.parse(request.body);
-  const plotParameters = normalizePlotParameters(body.params);
+  const plotParameters = body.params ? normalizePlotParameters(body.params) : undefined;
 
   try {
     const { artifact, purchase, mode } = await authorizePurchase({

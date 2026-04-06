@@ -46,13 +46,8 @@ export async function readImageMetadata(buffer: Buffer): Promise<{
   };
 }
 
-export function slugifyBaseName(fileName: string): string {
-  const withoutExtension = fileName.replace(/\.[^/.]+$/, "");
-  return withoutExtension
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    .slice(0, 48) || "plotimg-artwork";
+export function buildSafeArtifactFileName(previewFingerprint: string): string {
+  return `plotimg-${previewFingerprint.slice(0, 12)}.svg`;
 }
 
 function getBrightness(
@@ -94,7 +89,6 @@ function buildSvgMarkup(paths: string[], width: number, height: number): string 
 
 export async function generateSinDrawerArtifact(
   sourceBuffer: Buffer,
-  originalFileName: string,
   params: PlotParameters,
   previewFingerprint: string,
 ): Promise<RenderArtifact> {
@@ -172,7 +166,7 @@ export async function generateSinDrawerArtifact(
     estimatedLineCount,
     pointsPerPath,
     previewFingerprint,
-    fileName: `${slugifyBaseName(originalFileName)}-plotimg.svg`,
+    fileName: buildSafeArtifactFileName(previewFingerprint),
     image: {
       width,
       height,

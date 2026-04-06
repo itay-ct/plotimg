@@ -1,6 +1,5 @@
 import { randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { basename } from "node:path";
 
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
@@ -14,6 +13,7 @@ import { config } from "./config.js";
 import { database } from "./lib/db.js";
 import { sendDownloadEmail } from "./lib/email.js";
 import {
+  buildSafeArtifactFileName,
   createRenderFingerprint,
   generateSinDrawerArtifact,
   normalizePlotParameters,
@@ -21,7 +21,13 @@ import {
 } from "./lib/image-processing.js";
 import { isPreviewJobActive, queuePreviewJob } from "./lib/jobs.js";
 import { createCheckoutSession, getCheckoutSession, verifyWebhook } from "./lib/polar.js";
-import { readUploadFile, saveArtifactSvg, saveUploadFile, sha256 } from "./lib/storage.js";
+import {
+  buildSafeUploadFileName,
+  readUploadFile,
+  saveArtifactSvg,
+  saveUploadFile,
+  sha256,
+} from "./lib/storage.js";
 import { signToken, verifyToken } from "./lib/tokens.js";
 import type { PlotParameters, PreviewPayload, PurchaseRecord, StoredUpload } from "./types.js";
 
@@ -202,7 +208,6 @@ async function ensureArtifact(params: {
   const buffer = await readUploadFile(upload.filePath);
   const renderArtifact = await generateSinDrawerArtifact(
     buffer,
-    upload.fileName,
     params.plotParameters,
     renderFingerprint,
   );
@@ -363,6 +368,10 @@ async function authorizePurchase(input: {
   throw new Error("This artwork is not unlocked yet.");
 }
 
+function getSafeArtifactResponseName(renderFingerprint: string) {
+  return buildSafeArtifactFileName(renderFingerprint);
+}
+
 server.get("/health", async () => ({
   ok: true,
   environment: config.NODE_ENV,
@@ -401,11 +410,12 @@ server.post(
     const metadata = await readImageMetadata(buffer);
     const uploadId = randomUUID();
     const filePath = await saveUploadFile(buffer, file.mimetype);
+    const safeUploadFileName = buildSafeUploadFileName(uploadId, file.mimetype);
 
     database.insertUpload({
       id: uploadId,
       sessionId,
-      fileName: file.filename || "upload-image",
+      fileName: safeUploadFileName,
       mimeType: file.mimetype,
       width: metadata.width,
       height: metadata.height,
@@ -415,13 +425,13 @@ server.post(
     });
 
     request.log.info(
-      { uploadId, sessionId, fileName: file.filename, width: metadata.width, height: metadata.height },
+      { uploadId, sessionId, mimeType: file.mimetype, width: metadata.width, height: metadata.height },
       "Upload stored",
     );
 
     return reply.send({
       uploadId,
-      fileName: file.filename || basename(filePath),
+      fileName: safeUploadFileName,
       dimensions: metadata,
     });
   },
@@ -479,7 +489,6 @@ server.post(
         const sourceBuffer = await readUploadFile(upload.filePath);
         const preview = await generateSinDrawerArtifact(
           sourceBuffer,
-          upload.fileName,
           plotParameters,
           renderFingerprint,
         );
@@ -674,6 +683,7 @@ server.post("/generate-svg", async (request, reply) => {
     });
 
     const downloadUrl = buildDownloadUrl(artifact.id, purchase.id);
+    const safeArtifactFileName = getSafeArtifactResponseName(artifact.renderFingerprint);
     let emailDelivered = false;
     let emailReason: string | undefined;
 
@@ -681,7 +691,7 @@ server.post("/generate-svg", async (request, reply) => {
       const delivery = await sendDownloadEmail({
         email: body.email,
         downloadUrl,
-        fileName: artifact.fileName,
+        fileName: safeArtifactFileName,
       });
 
       emailDelivered = delivery.delivered;
@@ -704,7 +714,7 @@ server.post("/generate-svg", async (request, reply) => {
       artifactId: artifact.id,
       purchaseId: purchase.id,
       mode,
-      fileName: artifact.fileName,
+      fileName: safeArtifactFileName,
       estimatedLineCount: artifact.estimatedLineCount,
       downloadUrl,
       emailDelivered,
@@ -738,8 +748,9 @@ server.get("/download", async (request, reply) => {
 
   request.log.info({ purchaseId: purchase.id, artifactId: artifact.id }, "SVG downloaded");
 
+  const safeArtifactFileName = getSafeArtifactResponseName(artifact.renderFingerprint);
   reply.header("Content-Type", "image/svg+xml");
-  reply.header("Content-Disposition", `attachment; filename="${artifact.fileName}"`);
+  reply.header("Content-Disposition", `attachment; filename="${safeArtifactFileName}"`);
   return reply.send(createReadStream(artifact.svgPath));
 });
 

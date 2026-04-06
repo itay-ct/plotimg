@@ -10,8 +10,16 @@ export function sha256(value: Buffer | string): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
+export function getExtensionForMimeType(mimeType: string) {
+  return extension(mimeType) || "bin";
+}
+
+export function buildSafeUploadFileName(uploadId: string, mimeType: string) {
+  return `plotimg-upload-${uploadId.slice(0, 8)}.${getExtensionForMimeType(mimeType)}`;
+}
+
 export async function saveUploadFile(buffer: Buffer, mimeType: string): Promise<string> {
-  const ext = extension(mimeType) || "bin";
+  const ext = getExtensionForMimeType(mimeType);
   const fileName = `${randomUUID()}.${ext}`;
   const filePath = join(config.uploadsDir, fileName);
   await fs.writeFile(filePath, buffer);

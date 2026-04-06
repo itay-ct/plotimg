@@ -1536,16 +1536,16 @@ export function PlotimgStudio() {
         "success",
         (event) => {
           checkoutSucceeded = true;
-          event.preventDefault();
           activeEmbeddedCheckout.current = null;
-          setUnlockContext({
-            mode: "paid",
-            purchaseId: response.purchaseId,
-            checkoutId,
-          });
-          setCheckoutStage("awaiting-email");
-          setCheckoutNotice("Payment confirmed. Add your email for instant delivery.");
-          checkout.close();
+
+          if (!event.detail.redirect) {
+            window.location.assign(
+              `${window.location.pathname}?purchaseId=${encodeURIComponent(response.purchaseId)}&checkout_id=${encodeURIComponent(checkoutId)}`,
+            );
+            return;
+          }
+
+          setCheckoutNotice("Order completed. Preparing your download…");
         },
         { once: true },
       );

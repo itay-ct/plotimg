@@ -1,10 +1,4 @@
-import type {
-  CheckoutPriceMap,
-  GenerateSvgResponse,
-  PlotParameters,
-  PreviewResult,
-  UploadRecord,
-} from "./plotimg";
+import type { GenerateSvgResponse, PlotParameters, PreviewResult, UploadRecord } from "./plotimg";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "") || "http://localhost:8081";
@@ -160,14 +154,5 @@ export async function generateSvg(input: {
       checkoutId: input.checkoutId,
       currency: input.currency,
     }),
-  });
-}
-
-export async function getCheckoutConfig(sessionId: string) {
-  return requestJson<{
-    allowCheckoutDiscountCodes: boolean;
-    prices: CheckoutPriceMap;
-  }>("/checkout-config", sessionId, {
-    method: "GET",
   });
 }

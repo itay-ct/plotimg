@@ -33,69 +33,6 @@ function sleep(ms: number) {
   });
 }
 
-function formatPriceLabel(currency: "USD" | "ILS", amountInMinorUnits: number) {
-  const formatted = new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency,
-  }).format(amountInMinorUnits / 100);
-
-  return `${formatted} ${currency}`;
-}
-
-async function getProductPriceLabel(currency: "USD" | "ILS") {
-  if (!polar) {
-    return null;
-  }
-
-  const productId = getProductIdForCurrency(currency);
-
-  if (!productId) {
-    return null;
-  }
-
-  const product = await polar.products.get({
-    id: productId,
-  });
-
-  const matchingPrice = product.prices.find((price) => {
-    if (price.isArchived || price.amountType !== "fixed") {
-      return false;
-    }
-
-    return price.priceCurrency.toUpperCase() === currency;
-  });
-
-  if (!matchingPrice || matchingPrice.amountType !== "fixed") {
-    return null;
-  }
-
-  return formatPriceLabel(currency, matchingPrice.priceAmount);
-}
-
-async function getSafeProductPriceLabel(currency: "USD" | "ILS") {
-  try {
-    return await getProductPriceLabel(currency);
-  } catch {
-    return null;
-  }
-}
-
-export async function getCheckoutDisplayPrices() {
-  const [usdLabel, ilsLabel] = await Promise.all([
-    getSafeProductPriceLabel("USD"),
-    getSafeProductPriceLabel("ILS"),
-  ]);
-
-  return {
-    USD: {
-      label: usdLabel,
-    },
-    ILS: {
-      label: ilsLabel,
-    },
-  };
-}
-
 export async function createCheckoutSession(input: {
   artifactId: string;
   purchaseId: string;

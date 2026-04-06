@@ -31,12 +31,10 @@ import {
   createCheckout,
   createPreviewJob,
   generateSvg,
-  getCheckoutConfig,
   getPreviewStatus,
   uploadImage,
 } from "@/lib/api";
 import {
-  type CheckoutPriceMap,
   DEFAULT_PARAMETERS,
   DEFAULT_PREVIEW_BACKGROUND,
   DEFAULT_PREVIEW_LINE,
@@ -771,7 +769,6 @@ function CheckoutModal({
   onCheckoutStart,
   checkoutCurrency,
   onCheckoutCurrencyChange,
-  checkoutPrices,
   email,
   onEmailChange,
   onFulfillment,
@@ -784,7 +781,6 @@ function CheckoutModal({
   onCheckoutStart: () => void;
   checkoutCurrency: CheckoutCurrency;
   onCheckoutCurrencyChange: (currency: CheckoutCurrency) => void;
-  checkoutPrices: CheckoutPriceMap;
   email: string;
   onEmailChange: (value: string) => void;
   onFulfillment: () => void;
@@ -844,7 +840,7 @@ function CheckoutModal({
                 </div>
               </div>
               <div className="text-2xl font-semibold text-[rgba(17,49,39,0.92)]">
-                {checkoutPrices[checkoutCurrency].label}
+                {PRICE_OPTIONS[checkoutCurrency].label}
               </div>
             </div>
           ) : null}
@@ -934,7 +930,6 @@ export function PlotimgStudio() {
     status: "idle",
   });
   const [checkoutCurrency, setCheckoutCurrency] = useState<CheckoutCurrency>("USD");
-  const [checkoutPrices, setCheckoutPrices] = useState<CheckoutPriceMap>(PRICE_OPTIONS);
   const [checkoutStage, setCheckoutStage] = useState<CheckoutStage>("idle");
   const [checkoutNotice, setCheckoutNotice] = useState<string | null>(null);
   const [unlockContext, setUnlockContext] = useState<UnlockContext | null>(null);
@@ -997,19 +992,6 @@ export function PlotimgStudio() {
       setPurchaseNotice((current) => (current === message ? null : current));
       purchaseNoticeTimeoutRef.current = null;
     }, 5000);
-  });
-
-  const refreshCheckoutPrices = useEffectEvent(async () => {
-    if (!sessionId) {
-      return;
-    }
-
-    try {
-      const response = await getCheckoutConfig(sessionId);
-      setCheckoutPrices(response.prices);
-    } catch {
-      // Keep the existing fallback labels if live checkout pricing is unavailable.
-    }
   });
 
   const startFreshSession = useEffectEvent((reason?: string) => {
@@ -1341,8 +1323,6 @@ export function PlotimgStudio() {
       return;
     }
 
-    void refreshCheckoutPrices();
-
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         activeEmbeddedCheckout.current?.close();
@@ -1353,15 +1333,7 @@ export function PlotimgStudio() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [checkoutModalOpen, refreshCheckoutPrices]);
-
-  useEffect(() => {
-    if (!sessionId) {
-      return;
-    }
-
-    void refreshCheckoutPrices();
-  }, [refreshCheckoutPrices, sessionId]);
+  }, [checkoutModalOpen]);
 
   const closeCheckoutModal = useEffectEvent(() => {
     activeEmbeddedCheckout.current?.close();
@@ -1795,7 +1767,6 @@ export function PlotimgStudio() {
         onCheckoutStart={() => void handleCheckoutStart()}
         checkoutCurrency={checkoutCurrency}
         onCheckoutCurrencyChange={setCheckoutCurrency}
-        checkoutPrices={checkoutPrices}
         email={email}
         onEmailChange={setEmail}
         onFulfillment={() => void handleFulfillment()}

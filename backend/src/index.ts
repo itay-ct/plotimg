@@ -20,12 +20,7 @@ import {
   readImageMetadata,
 } from "./lib/image-processing.js";
 import { isPreviewJobActive, queuePreviewJob } from "./lib/jobs.js";
-import {
-  createCheckoutSession,
-  getCheckoutDisplayPrices,
-  getCheckoutSession,
-  verifyWebhook,
-} from "./lib/polar.js";
+import { createCheckoutSession, getCheckoutSession, verifyWebhook } from "./lib/polar.js";
 import { readUploadFile, saveArtifactSvg, saveUploadFile, sha256 } from "./lib/storage.js";
 import { signToken, verifyToken } from "./lib/tokens.js";
 import type { PlotParameters, PreviewPayload, PurchaseRecord, StoredUpload } from "./types.js";
@@ -372,22 +367,6 @@ server.get("/health", async () => ({
   ok: true,
   environment: config.NODE_ENV,
 }));
-
-server.get("/checkout-config", async () => {
-  const prices = await getCheckoutDisplayPrices();
-
-  return {
-    allowCheckoutDiscountCodes: config.POLAR_ALLOW_DISCOUNT_CODES,
-    prices: {
-      USD: {
-        label: prices.USD.label ?? "$3.99 USD",
-      },
-      ILS: {
-        label: prices.ILS.label ?? "₪9.90 ILS",
-      },
-    },
-  };
-});
 
 server.post(
   "/upload",

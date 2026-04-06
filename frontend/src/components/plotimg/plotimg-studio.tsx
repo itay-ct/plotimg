@@ -244,43 +244,55 @@ function InfoTooltip({
     setMounted(true);
   }, []);
 
-  const updatePosition = useEffectEvent(() => {
-    if (!triggerRef.current || !bubbleRef.current) {
-      return;
-    }
-
-    const triggerRect = triggerRef.current.getBoundingClientRect();
-    const bubbleRect = bubbleRef.current.getBoundingClientRect();
-    const margin = 12;
-    const offset = 10;
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-
-    const clampedLeft = clamp(
-      triggerRect.left + triggerRect.width / 2 - bubbleRect.width / 2,
-      margin,
-      viewportWidth - bubbleRect.width - margin,
-    );
-
-    const fitsBelow = triggerRect.bottom + offset + bubbleRect.height <= viewportHeight - margin;
-    const fitsAbove = triggerRect.top - offset - bubbleRect.height >= margin;
-    const placement = !fitsBelow && fitsAbove ? "top" : "bottom";
-    const top =
-      placement === "bottom"
-        ? Math.min(triggerRect.bottom + offset, viewportHeight - bubbleRect.height - margin)
-        : Math.max(triggerRect.top - bubbleRect.height - offset, margin);
-
-    setBubbleStyle({
-      left: clampedLeft,
-      top,
-      placement,
-    });
-  });
-
   useLayoutEffect(() => {
     if (!open) {
+      setBubbleStyle(null);
       return;
     }
+
+    const updatePosition = () => {
+      if (!triggerRef.current || !bubbleRef.current) {
+        return;
+      }
+
+      const triggerRect = triggerRef.current.getBoundingClientRect();
+      const bubbleRect = bubbleRef.current.getBoundingClientRect();
+      const margin = 12;
+      const offset = 10;
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+
+      const clampedLeft = clamp(
+        triggerRect.left + triggerRect.width / 2 - bubbleRect.width / 2,
+        margin,
+        viewportWidth - bubbleRect.width - margin,
+      );
+
+      const fitsBelow = triggerRect.bottom + offset + bubbleRect.height <= viewportHeight - margin;
+      const fitsAbove = triggerRect.top - offset - bubbleRect.height >= margin;
+      const placement = !fitsBelow && fitsAbove ? "top" : "bottom";
+      const top =
+        placement === "bottom"
+          ? Math.min(triggerRect.bottom + offset, viewportHeight - bubbleRect.height - margin)
+          : Math.max(triggerRect.top - bubbleRect.height - offset, margin);
+
+      setBubbleStyle((current) => {
+        if (
+          current &&
+          current.left === clampedLeft &&
+          current.top === top &&
+          current.placement === placement
+        ) {
+          return current;
+        }
+
+        return {
+          left: clampedLeft,
+          top,
+          placement,
+        };
+      });
+    };
 
     updatePosition();
 
@@ -295,7 +307,7 @@ function InfoTooltip({
       window.removeEventListener("resize", handleWindowChange);
       window.removeEventListener("scroll", handleWindowChange, true);
     };
-  }, [open, updatePosition]);
+  }, [open]);
 
   return (
     <span className={clsx("relative inline-flex", className)}>

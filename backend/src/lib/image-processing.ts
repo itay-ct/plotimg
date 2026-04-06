@@ -6,7 +6,7 @@ import { z } from "zod";
 import type { PlotParameters, RenderArtifact } from "../types.js";
 
 const plotParametersSchema = z.object({
-  processingHeight: z.coerce.number().min(60).max(320),
+  processingHeight: z.coerce.number().min(30).max(180),
   pixelWidth: z.coerce.number().min(2).max(18),
   resolution: z.coerce.number().min(0.1).max(4),
   maxAmplitude: z.coerce.number().min(0.5).max(12),

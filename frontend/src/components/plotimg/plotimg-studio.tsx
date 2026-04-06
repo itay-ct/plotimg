@@ -575,8 +575,8 @@ function ControlRail({
                   id="processing-height"
                   label="Height"
                   tooltip={TOOLTIPS.processingHeight}
-                  min={80}
-                  max={260}
+                  min={30}
+                  max={180}
                   step={1}
                   value={params.processingHeight}
                   valueLabel={`${params.processingHeight}px`}

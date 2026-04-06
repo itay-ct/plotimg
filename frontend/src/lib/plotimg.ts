@@ -52,7 +52,7 @@ export type CheckoutPriceMap = {
 };
 
 export const DEFAULT_PARAMETERS: PlotParameters = {
-  processingHeight: 125,
+  processingHeight: 100,
   pixelWidth: 6,
   resolution: 0.75,
   maxAmplitude: 2.7,
@@ -61,7 +61,7 @@ export const DEFAULT_PARAMETERS: PlotParameters = {
 
 export const DEFAULT_PREVIEW_BACKGROUND = "#ffffff";
 export const DEFAULT_PREVIEW_LINE = "#111111";
-export const SESSION_STORAGE_KEY = "plotimg-editor-state-v7";
+export const SESSION_STORAGE_KEY = "plotimg-editor-state-v8";
 export const SESSION_ID_STORAGE_KEY = "plotimg-session-id";
 
 export const STARTER_IMAGES = [

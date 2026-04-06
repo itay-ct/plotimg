@@ -164,6 +164,63 @@ function isPendingPaymentConfirmationError(error: unknown) {
   return error instanceof Error && error.message === PENDING_PAYMENT_CONFIRMATION_ERROR;
 }
 
+function readBlobAsDataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+        return;
+      }
+
+      reject(new Error("Image preview could not be restored."));
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("Image preview could not be restored."));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function loadImageElement(src: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = document.createElement("img");
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error("Image preview could not be restored."));
+    image.src = src;
+  });
+}
+
+async function createRestorableOriginalImageSource(file: File) {
+  if (file.type === "image/svg+xml") {
+    return readBlobAsDataUrl(file);
+  }
+
+  const objectUrl = URL.createObjectURL(file);
+
+  try {
+    const image = await loadImageElement(objectUrl);
+    const maxDimension = 1600;
+    const dominantSide = Math.max(image.naturalWidth, image.naturalHeight, 1);
+    const scale = Math.min(1, maxDimension / dominantSide);
+    const width = Math.max(1, Math.round(image.naturalWidth * scale));
+    const height = Math.max(1, Math.round(image.naturalHeight * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+
+    if (!context) {
+      throw new Error("Image preview could not be restored.");
+    }
+
+    context.drawImage(image, 0, 0, width, height);
+    const exportMimeType = file.type === "image/png" ? "image/png" : "image/jpeg";
+
+    return canvas.toDataURL(exportMimeType, exportMimeType === "image/jpeg" ? 0.9 : undefined);
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 async function loadPolarEmbedCheckout() {
   if (typeof window === "undefined") {
     throw new Error("Polar checkout is only available in the browser.");
@@ -1499,7 +1556,6 @@ export function PlotimgStudio() {
     }
 
     clearUnlockProgress();
-    updateOriginalImageSource(sourcePreview ?? URL.createObjectURL(file), !sourcePreview);
     setShowSamples(false);
     setPreview(null);
     setRenderedParams(null);
@@ -1508,6 +1564,16 @@ export function PlotimgStudio() {
       status: "uploading",
       message: "Uploading…",
     });
+
+    try {
+      if (sourcePreview) {
+        updateOriginalImageSource(sourcePreview);
+      } else {
+        updateOriginalImageSource(await createRestorableOriginalImageSource(file));
+      }
+    } catch {
+      updateOriginalImageSource(sourcePreview ?? URL.createObjectURL(file), !sourcePreview);
+    }
 
     let nextUpload: UploadRecord;
 

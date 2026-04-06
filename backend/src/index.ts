@@ -120,6 +120,10 @@ type DownloadTokenPayload = {
   expiresAt: number;
 };
 
+const CHECKOUT_CONFIRMATION_RETRY_DELAYS_MS = [0, 900, 1600, 2600] as const;
+const PENDING_PAYMENT_CONFIRMATION_ERROR =
+  "Payment confirmation is still in progress. Please wait a few seconds and try again.";
+
 function getSessionId(request: { headers: Record<string, unknown> }) {
   const headerValue = request.headers["x-plotimg-session"];
 
@@ -186,6 +190,20 @@ function buildDownloadUrl(artifactId: string, purchaseId: string) {
 
 function serializePreview(payload: PreviewPayload) {
   return JSON.stringify(payload);
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+function isCheckoutFulfilled(checkout: Awaited<ReturnType<typeof getCheckoutSession>>) {
+  if (checkout.status === "succeeded") {
+    return true;
+  }
+
+  return checkout.status === "confirmed" && !checkout.isPaymentRequired && checkout.totalAmount === 0;
 }
 
 async function ensureArtifact(params: {
@@ -263,18 +281,30 @@ async function confirmPaidPurchase(input: {
     throw new Error("The purchased artwork could not be found.");
   }
 
-  const checkout = await getCheckoutSession(input.checkoutId);
-  const checkoutPurchaseId =
-    checkout.metadata && typeof checkout.metadata.purchaseId === "string"
-      ? checkout.metadata.purchaseId
-      : null;
+  let checkout: Awaited<ReturnType<typeof getCheckoutSession>> | null = null;
 
-  if (checkoutPurchaseId && checkoutPurchaseId !== purchase.id) {
-    throw new Error("Checkout does not match this purchase.");
+  for (const delay of CHECKOUT_CONFIRMATION_RETRY_DELAYS_MS) {
+    if (delay > 0) {
+      await sleep(delay);
+    }
+
+    checkout = await getCheckoutSession(input.checkoutId);
+    const checkoutPurchaseId =
+      checkout.metadata && typeof checkout.metadata.purchaseId === "string"
+        ? checkout.metadata.purchaseId
+        : null;
+
+    if (checkoutPurchaseId && checkoutPurchaseId !== purchase.id) {
+      throw new Error("Checkout does not match this purchase.");
+    }
+
+    if (isCheckoutFulfilled(checkout)) {
+      break;
+    }
   }
 
-  if (checkout.status !== "succeeded") {
-    throw new Error("Payment has not been confirmed yet.");
+  if (!checkout || !isCheckoutFulfilled(checkout)) {
+    throw new Error(PENDING_PAYMENT_CONFIRMATION_ERROR);
   }
 
   database.updatePurchase(purchase.id, {

@@ -131,6 +131,9 @@ const POLAR_EMBED_SCRIPT_SRC =
   "https://cdn.jsdelivr.net/npm/@polar-sh/checkout@0.2.0/dist/embed.global.js";
 const POLAR_SCRIPT_LOAD_TIMEOUT_MS = 8000;
 const POLAR_EMBED_OPEN_TIMEOUT_MS = 8000;
+const PURCHASE_RETURN_RETRY_DELAYS_MS = [0, 1200, 2200] as const;
+const PENDING_PAYMENT_CONFIRMATION_ERROR =
+  "Payment confirmation is still in progress. Please wait a few seconds and try again.";
 
 const TOOLTIPS = {
   processingHeight: "More rows = more vertical detail.",
@@ -155,6 +158,10 @@ function stepValue(value: number, step: number, direction: -1 | 1, min: number, 
   const precision = step.toString().split(".")[1]?.length ?? 0;
   const nextValue = value + step * direction;
   return clamp(Number(nextValue.toFixed(precision)), min, max);
+}
+
+function isPendingPaymentConfirmationError(error: unknown) {
+  return error instanceof Error && error.message === PENDING_PAYMENT_CONFIRMATION_ERROR;
 }
 
 async function loadPolarEmbedCheckout() {
@@ -1299,6 +1306,38 @@ export function PlotimgStudio() {
     });
   }, [beginPreviewGeneration, preview, recoverIfSessionExpired, renderedParams, sessionId, upload]);
 
+  const completeReturnedPurchase = useEffectEvent(
+    async (purchaseId: string, checkoutId: string) => {
+      let lastError: unknown = null;
+
+      for (const delay of PURCHASE_RETURN_RETRY_DELAYS_MS) {
+        if (delay > 0) {
+          showTimedPurchaseNotice("Finalizing your order...");
+          await new Promise<void>((resolve) => {
+            window.setTimeout(resolve, delay);
+          });
+        }
+
+        try {
+          return await generateSvg({
+            sessionId,
+            purchaseId,
+            checkoutId,
+            currency: checkoutCurrency,
+          });
+        } catch (error) {
+          lastError = error;
+
+          if (!isPendingPaymentConfirmationError(error)) {
+            throw error;
+          }
+        }
+      }
+
+      throw lastError;
+    },
+  );
+
   useEffect(() => {
     if (!sessionId || typeof window === "undefined") {
       return;
@@ -1327,12 +1366,7 @@ export function PlotimgStudio() {
     setDownloadError(null);
     showTimedPurchaseNotice("Thanks for your purchase, downloading...");
 
-    void generateSvg({
-      sessionId,
-      purchaseId,
-      checkoutId,
-      currency: checkoutCurrency,
-    })
+    void completeReturnedPurchase(purchaseId, checkoutId)
       .then((response) => {
         setDownloadResult(response);
         setUnlockContext({
@@ -1347,7 +1381,7 @@ export function PlotimgStudio() {
           error instanceof Error ? error.message : "Your download could not be completed.",
         );
       });
-  }, [checkoutCurrency, sessionId, showTimedPurchaseNotice, triggerDownload]);
+  }, [completeReturnedPurchase, showTimedPurchaseNotice, triggerDownload]);
 
   useEffect(() => {
     if (!checkoutModalOpen) {

@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Caveat, Fraunces, Manrope } from "next/font/google";
+import Script from "next/script";
 
 import "./globals.css";
 
@@ -35,6 +36,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${manrope.variable} ${fraunces.variable} ${caveat.variable} antialiased`}>
+        <Script
+          src="https://cdn.jsdelivr.net/npm/@polar-sh/checkout@0.2.0/dist/embed.global.js"
+          strategy="afterInteractive"
+          data-plotimg-polar-embed="true"
+        />
         {children}
       </body>
     </html>

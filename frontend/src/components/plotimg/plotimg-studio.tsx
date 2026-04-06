@@ -127,6 +127,10 @@ declare global {
 }
 
 let polarEmbedCheckoutLoader: Promise<PolarEmbedCheckoutStatic> | null = null;
+const POLAR_EMBED_SCRIPT_SRC =
+  "https://cdn.jsdelivr.net/npm/@polar-sh/checkout@0.2.0/dist/embed.global.js";
+const POLAR_SCRIPT_LOAD_TIMEOUT_MS = 8000;
+const POLAR_EMBED_OPEN_TIMEOUT_MS = 8000;
 
 const TOOLTIPS = {
   processingHeight: "More rows = more vertical detail.",
@@ -172,8 +176,24 @@ async function loadPolarEmbedCheckout() {
     const existingScript = document.querySelector<HTMLScriptElement>(
       'script[data-plotimg-polar-embed="true"]',
     );
+    let script: HTMLScriptElement | null = existingScript;
+    let timeoutId: number | null = null;
+
+    const cleanup = () => {
+      if (!script) {
+        return;
+      }
+
+      script.removeEventListener("load", finishResolve);
+      script.removeEventListener("error", handleError);
+    };
 
     const finishResolve = () => {
+      cleanup();
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+
       const embedCheckout = window.Polar?.EmbedCheckout;
 
       if (!embedCheckout) {
@@ -186,12 +206,23 @@ async function loadPolarEmbedCheckout() {
     };
 
     const handleError = () => {
+      cleanup();
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+
       polarEmbedCheckoutLoader = null;
       reject(new Error("Polar checkout could not be loaded."));
     };
 
+    timeoutId = window.setTimeout(() => {
+      cleanup();
+      polarEmbedCheckoutLoader = null;
+      reject(new Error("Polar checkout took too long to load."));
+    }, POLAR_SCRIPT_LOAD_TIMEOUT_MS);
+
     if (existingScript) {
-      if (existingScript.dataset.loaded === "true") {
+      if (window.Polar?.EmbedCheckout || existingScript.dataset.loaded === "true") {
         finishResolve();
         return;
       }
@@ -201,8 +232,8 @@ async function loadPolarEmbedCheckout() {
       return;
     }
 
-    const script = document.createElement("script");
-    script.src = "https://cdn.jsdelivr.net/npm/@polar-sh/checkout@0.2.0/dist/embed.global.js";
+    script = document.createElement("script");
+    script.src = POLAR_EMBED_SCRIPT_SRC;
     script.async = true;
     script.defer = true;
     script.dataset.plotimgPolarEmbed = "true";
@@ -1341,6 +1372,52 @@ export function PlotimgStudio() {
     setCheckoutModalOpen(false);
   });
 
+  const continueWithHostedCheckout = useEffectEvent((checkoutUrl: string, message: string) => {
+    setCheckoutNotice(message);
+    window.setTimeout(() => {
+      window.location.assign(checkoutUrl);
+    }, 120);
+  });
+
+  const openEmbeddedCheckout = useEffectEvent(
+    async (checkoutUrl: string, PolarEmbedCheckout: PolarEmbedCheckoutStatic) => {
+      return await new Promise<PolarEmbedCheckoutInstance>((resolve, reject) => {
+        let settled = false;
+        const timeoutId = window.setTimeout(() => {
+          settled = true;
+          reject(new Error("Embedded checkout took too long to open."));
+        }, POLAR_EMBED_OPEN_TIMEOUT_MS);
+
+        void PolarEmbedCheckout.create(checkoutUrl, {
+          theme: "light",
+          onLoaded: () => {
+            setCheckoutStage("opening");
+            setCheckoutNotice("Secure checkout open. Finish payment to unlock your SVG.");
+          },
+        })
+          .then((checkout) => {
+            if (settled) {
+              checkout.close();
+              return;
+            }
+
+            settled = true;
+            window.clearTimeout(timeoutId);
+            resolve(checkout);
+          })
+          .catch((error) => {
+            if (settled) {
+              return;
+            }
+
+            settled = true;
+            window.clearTimeout(timeoutId);
+            reject(error);
+          });
+      });
+    },
+  );
+
   function handleParameterChange<Key extends keyof PlotParameters>(
     key: Key,
     value: PlotParameters[Key],
@@ -1486,7 +1563,7 @@ export function PlotimgStudio() {
     }
 
     setCheckoutStage("creating");
-    setCheckoutNotice("Opening secure checkout…");
+    setCheckoutNotice("Preparing your order…");
 
     try {
       const response = await createCheckout({
@@ -1511,16 +1588,32 @@ export function PlotimgStudio() {
       }
 
       const checkoutId = response.checkoutId;
-      const PolarEmbedCheckout = await loadPolarEmbedCheckout();
-      let checkoutSucceeded = false;
+      setCheckoutNotice("Launching secure checkout…");
 
-      const checkout = await PolarEmbedCheckout.create(response.checkoutUrl, {
-        theme: "light",
-        onLoaded: () => {
-          setCheckoutStage("opening");
-          setCheckoutNotice("Secure checkout open. Finish payment to unlock your SVG.");
-        },
-      });
+      let PolarEmbedCheckout: PolarEmbedCheckoutStatic;
+
+      try {
+        PolarEmbedCheckout = await loadPolarEmbedCheckout();
+      } catch {
+        continueWithHostedCheckout(
+          response.checkoutUrl,
+          "Secure overlay took too long to load. Continuing in Polar…",
+        );
+        return;
+      }
+
+      let checkoutSucceeded = false;
+      let checkout: PolarEmbedCheckoutInstance;
+
+      try {
+        checkout = await openEmbeddedCheckout(response.checkoutUrl, PolarEmbedCheckout);
+      } catch {
+        continueWithHostedCheckout(
+          response.checkoutUrl,
+          "Secure overlay took too long to open. Continuing in Polar…",
+        );
+        return;
+      }
 
       activeEmbeddedCheckout.current = checkout;
 

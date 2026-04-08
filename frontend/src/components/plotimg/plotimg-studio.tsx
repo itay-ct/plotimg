@@ -9,6 +9,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type ReactNode,
 } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -50,6 +51,7 @@ import {
   type UploadRecord,
 } from "@/lib/plotimg";
 
+import { PlotimgFooterMeta } from "./footer-meta";
 import { PreviewCanvas } from "./preview-canvas";
 
 type GenerationState =
@@ -149,17 +151,6 @@ const TOOLTIPS = {
 
 const STALE_UPLOAD_ERROR = "Upload not found for this session.";
 const INVALID_SESSION_ERROR = "Missing or invalid x-plotimg-session header.";
-const PRODUCTION_VERSION_LABEL = "1.0";
-const PREVIEW_VERSION_LABEL = "1.1-preview";
-const PRODUCTION_HOSTS = new Set(["plotimg.com", "www.plotimg.com"]);
-
-function resolveVersionLabel(hostname: string | null) {
-  if (!hostname) {
-    return PRODUCTION_VERSION_LABEL;
-  }
-
-  return PRODUCTION_HOSTS.has(hostname) ? PRODUCTION_VERSION_LABEL : PREVIEW_VERSION_LABEL;
-}
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -638,10 +629,6 @@ function ControlRail({
   return (
     <div className="space-y-4">
       <div className="space-y-3">
-        <div className="text-sm font-semibold uppercase tracking-[0.22em] text-[rgba(17,49,39,0.56)]">
-          Plotimg
-        </div>
-
         <button
           type="button"
           onClick={onUploadClick}
@@ -807,7 +794,7 @@ function NoticeBanner({
   tone?: "neutral" | "warning" | "danger";
   message: string;
   tooltip?: string;
-  action?: React.ReactNode;
+  action?: ReactNode;
 }) {
   return (
     <div
@@ -1014,7 +1001,11 @@ function CheckoutModal({
   );
 }
 
-export function PlotimgStudio() {
+export function PlotimgStudio({
+  modeToggle,
+}: {
+  modeToggle: ReactNode;
+}) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const activePreviewRequest = useRef(0);
   const activeEmbeddedCheckout = useRef<{ close: () => void } | null>(null);
@@ -1024,7 +1015,6 @@ export function PlotimgStudio() {
   const purchaseNoticeTimeoutRef = useRef<number | null>(null);
 
   const [sessionId, setSessionId] = useState("");
-  const [versionLabel, setVersionLabel] = useState(PRODUCTION_VERSION_LABEL);
   const [upload, setUpload] = useState<UploadRecord | null>(null);
   const [originalImageSrc, setOriginalImageSrc] = useState<string | null>(null);
   const [params, setParams] = useState<PlotParameters>(DEFAULT_PARAMETERS);
@@ -1062,10 +1052,6 @@ export function PlotimgStudio() {
     typeof activeLineCount === "number" ? getComplexityWarning(activeLineCount) : null;
   const downloadDisabled = !downloadResult && (!upload || !previewReady || pendingChanges || previewBusy);
   const showDownloadCta = latestPreviewReady || !!downloadResult;
-
-  useEffect(() => {
-    setVersionLabel(resolveVersionLabel(window.location.hostname));
-  }, []);
 
   useEffect(() => {
     const locale = navigator.language.toLowerCase();
@@ -1826,6 +1812,13 @@ export function PlotimgStudio() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-[1600px] flex-col px-4 pb-8 pt-4 sm:px-6 lg:px-8">
+      <div className="mb-4 flex items-center justify-between gap-4">
+        <div className="text-sm font-semibold uppercase tracking-[0.22em] text-[rgba(17,49,39,0.56)]">
+          Plotimg
+        </div>
+        {modeToggle}
+      </div>
+
       <div className="grid items-start gap-5 lg:grid-cols-[19rem_minmax(0,1fr)]">
         <div className="plotimg-panel plotimg-shadow overflow-hidden rounded-[2rem] border border-white/70 lg:hidden">
           <div className="px-5 py-5">
@@ -1959,16 +1952,7 @@ export function PlotimgStudio() {
         </div>
       ) : null}
 
-      <footer className="mt-6 pb-2 text-center text-[11px] tracking-[0.12em] text-[rgba(17,49,39,0.34)]">
-        <span>v{versionLabel}</span>
-        <span className="mx-2">·</span>
-        <a
-          href="mailto:support@plotimg.com"
-          className="transition hover:text-[rgba(17,49,39,0.58)]"
-        >
-          support@plotimg.com
-        </a>
-      </footer>
+      <PlotimgFooterMeta />
 
       <CheckoutModal
         open={checkoutModalOpen}

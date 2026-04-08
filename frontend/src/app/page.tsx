@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 
-import { PlotimgStudio } from "@/components/plotimg/plotimg-studio";
+import { PlotimgWorkspace } from "@/components/plotimg/plotimg-workspace";
 
 export default function Home() {
   return (
@@ -18,7 +18,7 @@ export default function Home() {
         </main>
       }
     >
-      <PlotimgStudio />
+      <PlotimgWorkspace />
     </Suspense>
   );
 }

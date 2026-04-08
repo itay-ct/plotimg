@@ -350,8 +350,8 @@ export const KIRIGAMI_TEMPLATES: KirigamiTemplate[] = [
   },
   {
     id: "sample_reference_01",
-    name: "Reference sample 01",
-    description: "A starter inspired by the attached reference art, paired with manual geometry.",
+    name: "3x3 building blocks",
+    description: "A single 90° kirigami starter built from the attached reference look and manual geometry.",
     thumbnail: "/kirigami/sample-reference-01.svg",
     difficulty: "Intermediate",
     complexityLabel: "Reference",

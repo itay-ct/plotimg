@@ -149,6 +149,17 @@ const TOOLTIPS = {
 
 const STALE_UPLOAD_ERROR = "Upload not found for this session.";
 const INVALID_SESSION_ERROR = "Missing or invalid x-plotimg-session header.";
+const PRODUCTION_VERSION_LABEL = "1.0";
+const PREVIEW_VERSION_LABEL = "1.1-preview";
+const PRODUCTION_HOSTS = new Set(["plotimg.com", "www.plotimg.com"]);
+
+function resolveVersionLabel(hostname: string | null) {
+  if (!hostname) {
+    return PRODUCTION_VERSION_LABEL;
+  }
+
+  return PRODUCTION_HOSTS.has(hostname) ? PRODUCTION_VERSION_LABEL : PREVIEW_VERSION_LABEL;
+}
 
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
@@ -1013,6 +1024,7 @@ export function PlotimgStudio() {
   const purchaseNoticeTimeoutRef = useRef<number | null>(null);
 
   const [sessionId, setSessionId] = useState("");
+  const [versionLabel, setVersionLabel] = useState(PRODUCTION_VERSION_LABEL);
   const [upload, setUpload] = useState<UploadRecord | null>(null);
   const [originalImageSrc, setOriginalImageSrc] = useState<string | null>(null);
   const [params, setParams] = useState<PlotParameters>(DEFAULT_PARAMETERS);
@@ -1050,6 +1062,10 @@ export function PlotimgStudio() {
     typeof activeLineCount === "number" ? getComplexityWarning(activeLineCount) : null;
   const downloadDisabled = !downloadResult && (!upload || !previewReady || pendingChanges || previewBusy);
   const showDownloadCta = latestPreviewReady || !!downloadResult;
+
+  useEffect(() => {
+    setVersionLabel(resolveVersionLabel(window.location.hostname));
+  }, []);
 
   useEffect(() => {
     const locale = navigator.language.toLowerCase();
@@ -1944,7 +1960,7 @@ export function PlotimgStudio() {
       ) : null}
 
       <footer className="mt-6 pb-2 text-center text-[11px] tracking-[0.12em] text-[rgba(17,49,39,0.34)]">
-        <span>v1.0</span>
+        <span>v{versionLabel}</span>
         <span className="mx-2">·</span>
         <a
           href="mailto:support@plotimg.com"

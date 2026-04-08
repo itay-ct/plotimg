@@ -6,6 +6,11 @@ const PAGE = {
   height: 800,
 };
 
+const SAMPLE_PAGE = {
+  width: 500,
+  height: 663,
+};
+
 const FOLD_Y = 400;
 
 function overlaySurface(
@@ -87,8 +92,8 @@ const doubleSide = { x: 280, y: 190, width: 600, height: 160 } satisfies Rect;
 const boxTop = { x: 330, y: 455, width: 540, height: 190 } satisfies Rect;
 const boxSide = { x: 330, y: 165, width: 540, height: 185 } satisfies Rect;
 const archSide = { x: 300, y: 200, width: 600, height: 180 } satisfies Rect;
-const sampleTop = { x: 300, y: 460, width: 540, height: 160 } satisfies Rect;
-const sampleSide = { x: 280, y: 170, width: 580, height: 190 } satisfies Rect;
+const sampleTop = { x: 130, y: 365, width: 240, height: 145 } satisfies Rect;
+const sampleSide = { x: 95, y: 132, width: 310, height: 245 } satisfies Rect;
 
 export const KIRIGAMI_TEMPLATES: KirigamiTemplate[] = [
   {
@@ -101,7 +106,7 @@ export const KIRIGAMI_TEMPLATES: KirigamiTemplate[] = [
     supportsTopOverlay: false,
     supportsSideOverlay: true,
     previewCaption: "Single-step 90° pop-up",
-    page: PAGE,
+    page: SAMPLE_PAGE,
     foldAxis: {
       orientation: "horizontal",
       value: FOLD_Y,
